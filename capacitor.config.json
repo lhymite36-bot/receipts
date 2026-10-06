@@ -1,0 +1,10 @@
+{
+  "appId": "com.receipts.app",
+  "appName": "Receipts",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0D0D0D",
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
