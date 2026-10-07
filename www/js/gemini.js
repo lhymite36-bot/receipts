@@ -95,7 +95,10 @@
       e.reason = reasons[0] || '';
       const rd = (Array.isArray(ge.details) ? ge.details : []).map((d) => d && d.retryDelay).find(Boolean);
       if (rd) e.retryAfter = parseFloat(rd) || 0; // seconds, from google.rpc.RetryInfo
-      e.details = ['HTTP ' + res.status, e.apiStatus, reasons.join(', ')].filter(Boolean).join(' ')
+      // QuotaFailure violations tell a per-minute rate limit from the daily quota (quotaId ...PerMinute... / ...PerDay...)
+      e.quotaIds = (Array.isArray(ge.details) ? ge.details : []).flatMap((d) => (d && Array.isArray(d.violations) ? d.violations : []).map((v) => v && v.quotaId).filter(Boolean));
+      { const vs = (Array.isArray(ge.details) ? ge.details : []).flatMap((d) => (d && Array.isArray(d.violations) ? d.violations : [])); e.noFreeTier = vs.length > 0 && vs.every((v) => v && /FreeTier/i.test(v.quotaId || '')) && (vs.some((v) => String(v.quotaValue) === '0') || (vs.length > 1 && vs.every((v) => v.quotaValue == null))); } // free-tier limit 0: this model has no free quota
+      e.details = ['HTTP ' + res.status, e.apiStatus, reasons.join(', '), e.quotaIds.length ? '[' + e.quotaIds.join(', ') + ']' : ''].filter(Boolean).join(' ')
         + (ge.message ? ': ' + String(ge.message).replace(/\s+/g, ' ').slice(0, 300) : '');
       throw e;
     }
@@ -591,5 +594,28 @@
     e.quota = quotaHit; e.unavailable = true;
     throw e;
   }
-  VTS.gemini = { generateDialogueSpeech, dialogueChunks, isOverloaded, isModelUnavailable, withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
+  // What actually went wrong, for messages that can be diagnosed from a screenshot:
+  // rate (per-minute limit, retry after retryAfter s) | daily (per-day quota) | unavailable (model not offered to this key) |
+  // key (invalid / rejected key) | network | busy (Google overloaded) | blocked | other. msg = short redacted Google message.
+  function classifyError(err) {
+    const e = err || {}; const m = String(e.message || e || ''); const lower = m.toLowerCase(); const ids = (e.quotaIds || []).join(' ');
+    const out = { kind: 'other', model: e.model || '', status: e.status || 0, retryAfter: e.retryAfter || 0, quotaIds: e.quotaIds || [], msg: redact(String(e.details || m)).replace(/\s+/g, ' ').slice(0, 220) };
+    if (e.reason === 'API_KEY_INVALID' || lower.includes('api key not valid') || lower.includes('api_key_invalid') || (lower.includes('api key') && /invalid|expired|not found/.test(lower)) || (e.status === 403 && /permission|denied|api key|forbidden/.test(lower) && !/model/.test(lower)) || /add your gemini api key/i.test(m)) out.kind = 'key';
+    else if (e.status === 429 || e.apiStatus === 'RESOURCE_EXHAUSTED' || /resource_exhausted|quota/.test(lower)) {
+      if (e.noFreeTier) out.kind = 'noFree'; // e.g. gemini-2.5-pro-preview-tts on a free key: every limit is 0
+      else if (/PerDay/i.test(ids) && (!/PerMinute/i.test(ids) || e.retryAfter > 300)) out.kind = 'daily';
+      else if (e.retryAfter > 300) out.kind = 'daily'; // a retry hours away is not a per-minute limit
+      else if (/PerMinute/i.test(ids) || e.retryAfter) out.kind = 'rate';
+      else out.kind = /per.?day|daily/i.test(m) ? 'daily' : 'rate';
+    }
+    else if (isTtsModelUnavailable(e) || e.reason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED' || (e.status === 403 && /model/.test(lower))) out.kind = 'unavailable';
+    else if (e.timeout || e.interrupted || e.name === 'TypeError' || /failed to fetch|networkerror|network request failed|load failed|err_internet|err_name_not_resolved/.test(lower)) out.kind = 'network';
+    else if (e.status >= 500 || e.apiStatus === 'UNAVAILABLE' || lower.includes('high demand') || lower.includes('overloaded')) out.kind = 'busy';
+    else if (/blocked|safety/.test(lower)) out.kind = 'blocked';
+    return out;
+  }
+  // One TTS request on exactly this model (no fallback chain, no cool-down); the raw error carries .model. Story mode runs its own chain.
+  async function ttsOnce(model, text, o) { const out = await ttsWith(model, text, o || {}); out.model = model; return out; }
+  function resetCooling() { cooling.clear(); }
+  VTS.gemini = { classifyError, ttsOnce, resetCooling, isTtsModelUnavailable,  generateDialogueSpeech, dialogueChunks, isOverloaded, isModelUnavailable, withRetry, speechChunks, hashText, generateImage, IMAGE_MODELS, generateSpeech, ttsRequest, listTtsModels, ttsChunks, toPcm, pcmToWav, TTS_MODELS, TTS_VOICES, TTS_DEFAULT_MODEL, ttsIsStructured, host, generate, listKeyModels, friendlyError, fail, redact, DEFAULT_MODEL, BUILTIN_MODELS, FALLBACK_MODELS, LEGACY_MODEL_RE };
 }());

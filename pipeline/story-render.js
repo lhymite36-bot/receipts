@@ -113,7 +113,7 @@ async function cast(p) {
   log('CAST ' + [...groups].map(([w, ls]) => `${w}=${ls[0].voice} (${ls.length} line${ls.length > 1 ? 's' : ''})`).join(', ') + ' | models ' + ALLOWED.join(' > ') + ' | refused ' + FLAGGED.join(', '));
   let lines = []; const models = new Set(); const glitches = []; const verify = [];
   try { for (const [who, ls] of groups) lines.push(...await castOne(p, who, ls, models, glitches, verify)); } catch (e) { if (e.quota) queueAndExit(p, e); throw e; }
-  let qa = A.castQa(lines, [...models]);
+  let qa = A.castQa(lines, [...models], { strict: true });
   if (!qa.checks[0].ok) { // one automatic re-cast: the quieter-role character in the closest pair gets a contrasting voice
     const worst = qa.pairs.filter((q) => !q.ok).sort((a, b) => a.pitchGapSt - b.pitchGapSt)[0]; const used = new Set([...(p.characters || []).map((c) => c.voice), p.narrator && p.narrator.voice]);
     const who = [worst.a, worst.b].sort((a, b) => lines.filter((l) => l.who === a).length - lines.filter((l) => l.who === b).length)[0]; const other = qa.who[who === worst.a ? worst.b : worst.a];
@@ -121,7 +121,7 @@ async function cast(p) {
     const cand = Object.entries(S.VOICES).filter(([v, d]) => !used.has(v) && (!gender || d[0] === gender) && (other.f0 > 160 ? d[1] === 'low' : d[1] === 'high'));
     if (cand.length) { const nv = cand[0][0]; log(`  voices ${worst.a}/${worst.b} too close (${worst.pitchGapSt} st, ${worst.timbreGapPct}%): re-casting ${who} as ${nv}`); if (who === 'narrator') p.narrator.voice = nv; else c.voice = nv; c && (c.voiceWhy = (c.voiceWhy || '') + ' (re-cast for contrast)');
       try { const ls = S.voiceLines(p).filter((l) => l.who === who); lines = lines.filter((l) => l.who !== who).concat(await castOne(p, who, ls, models, glitches, verify)); } catch (e) { if (e.quota) queueAndExit(p, e); throw e; }
-      jw(OUT + '.plan.json', p); fs.writeFileSync(OUT + '.md', S.toMarkdown(p)); qa = A.castQa(lines, [...models]); }
+      jw(OUT + '.plan.json', p); fs.writeFileSync(OUT + '.md', S.toMarkdown(p)); qa = A.castQa(lines, [...models], { strict: true }); }
   }
   fs.mkdirSync(OUT + '.lines', { recursive: true }); lines.forEach((l, k) => AF.writeWav(`${OUT}.lines/${String(k + 1).padStart(2, '0')}-p${l.panel + 1}-${l.who}.wav`, l.x, RATE));
   const log2 = { pass: qa.pass, models: [...models], refused: FLAGGED, requests, glitchesRemoved: glitches, asr: verify, who: qa.who, pairs: qa.pairs, checks: qa.checks.map((c) => ({ name: c.name, ok: c.ok, val: c.val })), lines: lines.map((l) => ({ panel: l.panel + 1, who: l.who, voice: l.voice, delivery: l.delivery, text: l.text, dur: +l.dur.toFixed(2), model: l.model, style: S.styleFor(p, l.who, l.delivery) })) };
@@ -178,7 +178,7 @@ function finalQa(p, r, voiceLog) {
   const sil = r.silence.map(([a, b]) => ({ from: +a.toFixed(2), to: +b.toFixed(2), rmsDb: +rmsDb(a + 0.06, b - 0.06).toFixed(1) }));
   // every character still sounds different in the final mix (measured on the MP4 at each line's position)
   const seg = (l) => x.subarray(Math.floor((l.start + 0.02) * QA.RATE), Math.floor((l.start + l.dur - 0.02) * QA.RATE));
-  const mp4Lines = r.placed.map((l) => Object.assign({}, l, { x: Float32Array.from(seg(l)) })); const mq = A.castQa(mp4Lines, voiceLog.models);
+  const mp4Lines = r.placed.map((l) => Object.assign({}, l, { x: Float32Array.from(seg(l)) })); const mq = A.castQa(mp4Lines, voiceLog.models, { strict: true });
   const music = (() => { const iv = r.placed.map((l) => [l.start, l.start + l.dur]); const gaps = []; r.tm.shots.forEach((s) => { if (s.silence) return; const a = s.start + 0.1; const b = s.start + s.dur - 0.1; if (!iv.some(([p0, p1]) => p0 < b && p1 > a)) gaps.push(rmsDb(a, b)); }); const vo = r.placed.map((l) => rmsDb(l.start + 0.05, l.start + l.dur - 0.05)); return { voiceDb: +(AF.mean(vo)).toFixed(1), musicOnlyDb: gaps.length ? +(AF.mean(gaps)).toFixed(1) : null }; })();
   const checks = [
     ['1080x1920 H.264 yuv420p, 24 fps, AAC audio', v && v.codec_name === 'h264' && v.width === 1080 && v.height === 1920 && v.pix_fmt === 'yuv420p' && v.r_frame_rate === '24/1' && au && au.codec_name === 'aac', { v: v && [v.codec_name, v.width, v.height, v.pix_fmt, v.r_frame_rate], a: au && au.codec_name }],

@@ -1612,10 +1612,12 @@
     const v = keyInput.value.trim().replace(/^["'`]+|["'`]+$/g, '').replace(/^(x-goog-api-key:|key=)\s*/i, '').trim();
     if (!v) { toast('Paste a key first.', true); return; }
     if (v.length < 10 || v.length > 256 || /\s/.test(v)) { toast('That API key does not look valid.', true); return; }
+    const changed = getKey() !== v;
     localStorage.setItem(K.key, v); keyInput.type = 'password'; $('api-key-toggle').textContent = 'Show';
     renderSettings(); toast('API key saved on this device');
+    if (changed) window.dispatchEvent(new CustomEvent('rcp:keychange')); // Story mode: a new key gets a fresh try
   });
-  $('api-key-remove').addEventListener('click', () => { if (!getKey()) return; if (!confirm('Remove the saved API key from this device?')) return; localStorage.removeItem(K.key); renderSettings(); toast('API key removed'); });
+  $('api-key-remove').addEventListener('click', () => { if (!getKey()) return; if (!confirm('Remove the saved API key from this device?')) return; localStorage.removeItem(K.key); renderSettings(); toast('API key removed'); window.dispatchEvent(new CustomEvent('rcp:keychange')); });
   $('api-key-test').addEventListener('click', async () => {
     if (keyInput.value.trim()) $('api-key-save').click();
     const ks = $('key-state');

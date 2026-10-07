@@ -5,14 +5,13 @@
   'use strict';
   const VTS = window.VTS; const S = VTS.story; const D = VTS.storyDraw; const A = VTS.storyAudio; const G = VTS.gemini;
   const $ = (id) => document.getElementById(id);
-  const K = { mode: 'rcp.mode', plan: 'rcp.story.plan', input: 'rcp.story.input', queue: 'rcp.story.queue' };
+  const K = { mode: 'rcp.mode', plan: 'rcp.story.plan', input: 'rcp.story.input', queue: 'rcp.story.queue', keyfp: 'rcp.story.keyfp', keyAt: 'rcp.story.keyChangedAt', useModel: 'rcp.story.useModel' };
   const load = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (_) { return d; } };
   const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { toast('Storage is full: the story could not be saved.', true); } };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const redact = (m) => (G.redact ? G.redact(String(m)) : String(m));
   let tt = 0; function toast(text, err) { const t = $('toast'); if (!t) return; t.textContent = text; t.className = 'show' + (err ? ' err' : ''); clearTimeout(tt); tt = setTimeout(() => { t.className = ''; }, 2600); }
   function status(id, text, kind) { const el = $(id); if (!el) return; el.textContent = text || ''; el.className = 'status' + (kind ? ' ' + kind : ''); }
-  const isQuota = (e) => !!e && (e.status === 429 || /quota|RESOURCE_EXHAUSTED|\b429\b|rate.?limit/i.test(String(e.message || e)));
   const input = Object.assign({ storyline: '', tone: '', beats: 8, platform: 'reel', narrator: true, part1: false }, load(K.input, {}));
   let plan = load(K.plan, null); let voiced = null; let mixBuf = null; let tm = null; let placed = []; let playing = null; let busy = false;
   const view = $('view-create'); const canvas = $('st-canvas'); let R = null;
@@ -120,29 +119,56 @@
   $('st-cast').addEventListener('click', async (e) => {
     const b = e.target.closest('.st-prev'); if (!b) return; const who = b.dataset.who; const v = who === 'narrator' ? plan.narrator.voice : plan.characters.find((c) => c.id === who).voice;
     b.disabled = true; b.textContent = '…';
-    try { await A.previewVoice(plan, who, v); } catch (err) { toast(isQuota(err) ? 'Voice preview: the Gemini TTS quota is used up for today (resets 05:30 IST).' : 'Preview failed: ' + redact(err && err.message || err), true); }
+    try { await A.previewVoice(plan, who, v, { useModel: consentModel() }); } catch (err) { const ex = A.explain(errInfo(err), { keyChangedRecently: keyChangedRecently() }); toast('Preview: ' + ex.title + (ex.lines[0] ? ' (' + ex.lines[0].slice(0, 90) + ')' : ''), true); }
     finally { b.disabled = false; b.textContent = '▶'; }
   });
   function paintQa() {
     const el = $('st-voice-qa'); if (!voiced) { el.innerHTML = ''; $('st-render').disabled = true; return; }
     const q = voiced.qa; const names = Object.fromEntries(plan.characters.map((c) => [c.id, c.name]).concat([['narrator', 'Narrator']]));
-    el.innerHTML = q.checks.map((c) => `<div class="${c.ok ? 'ok' : 'bad'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}</div>`).join('') + Object.entries(q.who).map(([w, v]) => `<div class="muted">${esc(names[w] || w)} (${esc(v.voice)}): ${v.f0} Hz, timbre ${v.centroid} Hz, pitch movement ${v.f0StdSt} st</div>`).join('') + `<div class="muted">Model: ${esc(voiced.models.join(', '))} · TTS requests: ${voiced.calls}</div>`;
+    el.innerHTML = q.checks.map((c) => `<div class="${c.ok ? 'ok' : 'bad'}">${c.ok ? '✓' : '✗'} ${esc(c.name)}</div>`).join('') + Object.entries(q.who).map(([w, v]) => `<div class="muted">${esc(names[w] || w)} (${esc(v.voice)}): ${v.f0} Hz, timbre ${v.centroid} Hz, pitch movement ${v.f0StdSt} st</div>`).join('') + `<div class="muted">Model: ${esc(voiced.models.join(', '))}${voiced.acceptFlagged ? ' (lower expressiveness, chosen by you)' : ''} · TTS requests: ${voiced.calls}</div>`;
     const hard = q.checks[0].ok && q.checks[1].ok && q.checks[2].ok; $('st-render').disabled = !hard;
   }
-  async function genVoices(auto) {
-    if (!plan || busy) return; busy = true; $('st-voice-go').disabled = true;
-    try {
-      const r = await A.castVoices(plan, { onStatus: (s) => status('st-voice-status', s, 'live') });
-      voiced = Object.assign(r, { qa: A.castQa(r.lines, r.models) }); localStorage.removeItem(K.queue); clearInterval(qTimer);
-      const q = voiced.qa; status('st-voice-status', q.pass ? 'Voices ready and checked. Preview or render.' : (q.checks[0].ok ? 'Voices ready (see the notes below).' : 'Two voices sound too alike: pick a different voice for one of them and generate again.'), q.checks[0].ok ? 'ok' : 'err');
-      mixBuf = null; recomputeTiming(); paintQa(); $('st-dur').textContent = tm.total.toFixed(1) + ' s at 24 fps';
-    } catch (err) {
-      if (isQuota(err)) { save(K.queue, { at: Date.now(), title: (plan.social || {}).seriesTitle }); status('st-voice-status', 'The Gemini TTS quota is used up for today on the allowed voice models (resets 05:30 IST). Your render is queued: voices will be generated automatically when the quota is back (keep the app open, or come back later). No silent or flat version is made.', 'err'); armQueue(); }
-      else status('st-voice-status', 'Voice generation failed: ' + redact(err && err.message || err), 'err');
-    } finally { busy = false; $('st-voice-go').disabled = false; }
+  // ---------- voice errors: the real reason, per model, with a retry ----------
+  const keyChangedRecently = () => { const t = Number(load(K.keyAt, 0)) || 0; return t > 0 && Date.now() - t < 12 * 3600 * 1000; };
+  const consentModel = () => { const c = load(K.useModel, null); return c && c.fp === A.keyFp() ? c.model : ''; };
+  function errInfo(err) { if (err && err.story) return err.story; const c = G.classifyError ? G.classifyError(err) : { kind: 'other', msg: redact(err && err.message || err) }; return { kind: c.kind, perModel: [Object.assign({ model: c.model || 'request' }, c)], retryAfter: c.retryAfter || 0 }; }
+  let autoTimer = 0; let autoTries = 0;
+  function hideErr() { $('st-voice-err').classList.add('hidden'); clearInterval(autoTimer); $('st-retry').textContent = '↻ Try again now'; }
+  function showErr(info) {
+    const ex = A.explain(info, { keyChangedRecently: keyChangedRecently() });
+    $('st-err-title').textContent = ex.title; $('st-err-text').textContent = ex.text; $('st-err-note').textContent = ex.note || ''; $('st-err-note').classList.toggle('hidden', !ex.note);
+    $('st-err-lines').innerHTML = ex.lines.map((l) => `<li>${esc(redact(l))}</li>`).join('');
+    const flagged = info.kind === 'onlyFlagged' ? info.flagged : ['unavailable', 'daily', 'busy'].includes(info.kind) && info.avail && !consentModel() ? info.avail.flagged : null;
+    const fb = $('st-use-flagged'); if (flagged && flagged.length) { fb.dataset.model = flagged[0]; fb.textContent = `Use ${flagged[0]} anyway (lower expressiveness)`; fb.classList.remove('hidden'); } else fb.classList.add('hidden');
+    $('st-voice-err').classList.remove('hidden'); status('st-voice-status', '');
+    clearInterval(autoTimer);
+    if (info.kind === 'rate' && autoTries < 5) { autoTries++; let t = Math.ceil(info.retryAfter || 30) + 1; autoTimer = setInterval(() => { t--; $('st-retry').textContent = `↻ Try again now (auto in ${t} s)`; if (t <= 0) { clearInterval(autoTimer); genVoices(true); } }, 1000); }
+    if (info.kind === 'daily') { save(K.queue, { at: Date.now(), fp: A.keyFp(), title: (plan.social || {}).seriesTitle }); armQueue(); }
   }
+  async function genVoices(auto, o) {
+    if (!plan || busy) return; busy = true; $('st-voice-go').disabled = true; hideErr();
+    const useModel = (o && o.useModel) || consentModel();
+    try {
+      const r = await A.castVoices(plan, { useModel, rediscover: !auto, onStatus: (s) => status('st-voice-status', s, 'live') });
+      autoTries = 0; voiced = Object.assign(r, { qa: A.castQa(r.lines, r.models, { acceptFlagged: r.acceptFlagged }) }); localStorage.removeItem(K.queue); clearInterval(qTimer);
+      const q = voiced.qa; status('st-voice-status', q.pass ? `Voices ready and checked (${r.models.join(', ')}${r.acceptFlagged ? ', lower expressiveness' : ''}). Preview or render.` : (q.checks[0].ok ? 'Voices ready (see the notes below).' : 'Two voices sound too alike: pick a different voice for one of them and generate again.'), q.checks[0].ok ? 'ok' : 'err');
+      mixBuf = null; recomputeTiming(); paintQa(); paintModels(); $('st-dur').textContent = tm.total.toFixed(1) + ' s at 24 fps';
+    } catch (err) { showErr(errInfo(err)); paintModels(); }
+    finally { busy = false; $('st-voice-go').disabled = false; }
+  }
+  function paintModels() { A.discoverModels(false).then((a) => { $('st-models').textContent = a.listed ? `Voice models on this key: ${a.all.join(', ') || 'none'}` : ''; }).catch(() => { $('st-models').textContent = ''; }); }
   $('st-voice-go').addEventListener('click', () => genVoices(false));
+  $('st-retry').addEventListener('click', () => { autoTries = 0; A.resetSession(); genVoices(false); });
+  $('st-use-flagged').addEventListener('click', (e) => { const m = e.currentTarget.dataset.model; save(K.useModel, { model: m, fp: A.keyFp() }); toast('Using ' + m + ' (lower expressiveness)'); genVoices(false, { useModel: m }); });
   let qTimer = 0; function armQueue() { clearInterval(qTimer); qTimer = setInterval(() => { if (!busy && load(K.queue, null) && plan) genVoices(true); }, 15 * 60 * 1000); }
+  // a new key means a fresh try: forget the queue, cooled-down/dead models, the model list and any lower-expressiveness choice
+  function onKeyChange() {
+    save(K.keyAt, Date.now()); save(K.keyfp, A.keyFp()); localStorage.removeItem(K.queue); localStorage.removeItem(K.useModel); clearInterval(qTimer); A.resetSession(); hideErr(); $('st-models').textContent = '';
+    if (plan && !voiced && G.host.getKey && G.host.getKey()) { status('st-voice-status', 'New API key: trying the voices again…', 'live'); setTimeout(() => genVoices(false), 300); }
+    else if (plan && !voiced) status('st-voice-status', '');
+  }
+  window.addEventListener('rcp:keychange', onKeyChange);
+  window.addEventListener('storage', (e) => { if (e.key === 'rcp.apiKey') onKeyChange(); });
 
   // ---------- preview & render ----------
   async function buildMix() { if (mixBuf) return mixBuf; recomputeTiming(); const m = await A.mix(plan, placed, tm, { music: 'storybook' }); mixBuf = A.toAudioBuffer(m); return mixBuf; }
@@ -190,6 +216,7 @@
   // ---------- boot ----------
   paintInputs(); if (plan && plan.panels) { try { paintPlan(); } catch (e) { plan = null; } }
   setMode(load(K.mode, 'myth') === 'story' ? 'story' : 'myth');
-  if (load(K.queue, null) && plan) { status('st-voice-status', 'Queued: voices will be generated when the Gemini TTS quota is back.', ''); armQueue(); setTimeout(() => genVoices(true), 4000); }
-  VTS.storyUi = { setMode, get plan() { return plan; }, _test: { setVoiced(v) { voiced = v; mixBuf = null; recomputeTiming(); paintQa(); } } };
+  { const fp = A.keyFp(); const was = load(K.keyfp, null); if (was !== fp) { if (was) { save(K.keyAt, Date.now()); localStorage.removeItem(K.queue); localStorage.removeItem(K.useModel); } save(K.keyfp, fp); } }
+  if (load(K.queue, null) && plan) { status('st-voice-status', 'Queued: voices will be generated when the Gemini TTS quota is back (about 05:30 IST).', ''); armQueue(); setTimeout(() => genVoices(true), 4000); }
+  VTS.storyUi = { setMode, get plan() { return plan; }, _test: { setVoiced(v) { voiced = v; mixBuf = null; recomputeTiming(); paintQa(); }, genVoices, onKeyChange } };
 }());

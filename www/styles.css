@@ -326,3 +326,7 @@ input[type=range] { width: 100%; accent-color: var(--accent2); }
 .st-sections .md h4 { margin: 12px 0 4px; font-size: 14.5px; } .st-sections .md ul { margin: 4px 0; padding-left: 18px; }
 .st-sections .md pre { white-space: pre; font-size: 12px; background: var(--bg2); padding: 8px; border-radius: 8px; overflow-x: auto; }
 .st-sections .md code { background: var(--bg2); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
+.st-err { border: 1px solid rgba(226,61,40,.5); background: rgba(226,61,40,.08); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+.st-err b { display: block; color: #ffb4a8; font-size: 15px; } .st-err p { margin: 6px 0; font-size: 14px; } .st-err #st-err-note { color: #ffd9a8; }
+.st-err ul { margin: 6px 0; padding-left: 18px; color: var(--muted); word-break: break-word; font-family: ui-monospace, monospace; font-size: 11.5px; }
+.st-err-btns { display: flex; gap: 8px; flex-wrap: wrap; } .st-err-btns .btn { flex: 1 1 140px; min-height: 44px; }

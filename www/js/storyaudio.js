@@ -66,18 +66,21 @@
     const y = new Float32Array(x.length); const f = Math.min(x.length >> 1, Math.round(0.006 * RATE)); for (let i = 0; i < x.length; i++) y[i] = x[i] * g; for (let i = 0; i < f; i++) { y[i] *= i / f; y[y.length - 1 - i] *= i / f; } return y;
   }
   // QA over the cast: every character (and the narrator) distinct by measured pitch or timbre; nobody flat
-  function castQa(lines, models) {
+  function castQa(lines, models, qo) {
+    qo = qo || {};
     const by = {}; lines.forEach((l) => { if (!l.x || !l.x.length) return; (by[l.who] = by[l.who] || []).push(l); });
     const who = {}; for (const [k, ls] of Object.entries(by)) { const fs = ls.map((l) => Object.assign(features(l.x, RATE), { delivery: l.delivery })); const pitched = fs.filter((f) => f.voiced >= 8 && f.delivery !== 'whisper'); const use = pitched.length ? pitched : fs.filter((f) => f.voiced >= 4);
       who[k] = { voice: ls[0].voice, lines: ls.length, f0: Math.round(median(use.map((f) => f.f0))) || 0, centroid: Math.round(median(fs.map((f) => f.centroid))), f0StdSt: +median(use.map((f) => f.f0StdSt)).toFixed(2) }; }
     const names = Object.keys(who); const pairs = [];
     for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) { const a = who[names[i]]; const b = who[names[j]]; const st = a.f0 && b.f0 ? Math.abs(semis(a.f0, b.f0)) : 0; const cg = Math.abs(a.centroid - b.centroid) / Math.max(1, Math.min(a.centroid, b.centroid)); pairs.push({ a: names[i], b: names[j], pitchGapSt: +st.toFixed(1), timbreGapPct: Math.round(cg * 100), ok: st >= 3 || cg >= 0.18 }); }
     const bursts = []; let clipped = 0; lines.forEach((l) => { if (!l.x) return; const s = scan(l.x, RATE); if (s.bursts.length) bursts.push({ who: l.who, panel: l.panel + 1, at: s.bursts }); clipped += s.clipped; });
-    const flat = (models || []).filter((m) => FLAGGED_MODELS.includes(m) || !ALLOWED_MODELS.includes(m));
+    // flagged / lite models flatten the delivery: refused unless the user explicitly chose one ("lower expressiveness");
+    // other non-flagged TTS models the key offers are accepted when the rest of the QA passes
+    const flat = (models || []).filter((m) => FLAGGED_MODELS.includes(m) || /-lite-/i.test(m) || (qo.strict && !ALLOWED_MODELS.includes(m)));
     const monotone = Object.entries(who).filter(([k, v]) => v.f0 && v.f0StdSt < 1.2 && k !== 'narrator').map(([k]) => k);
     const checks = [
       { name: 'every voice differs from every other (pitch gap >= 3 st or timbre gap >= 18%)', ok: pairs.every((p) => p.ok), val: pairs },
-      { name: 'no flattening TTS model used (lite / 3.1 preview refused)', ok: !flat.length, val: models },
+      flat.length && qo.acceptFlagged ? { name: 'lower-expressiveness model chosen by you (' + flat.join(', ') + ')', ok: true, val: models, lowerExpressiveness: true } : { name: 'no flattening TTS model used (lite / 3.1 preview refused)', ok: !flat.length, val: models },
       { name: 'no noise bursts or clipping in the voice lines', ok: !bursts.length && !clipped, val: { bursts, clipped } },
       { name: 'characters are expressive (pitch varies >= 1.2 st within lines)', ok: !monotone.length, val: Object.fromEntries(Object.entries(who).map(([k, v]) => [k, v.f0StdSt])) },
     ];
@@ -129,43 +132,120 @@
   function pcmToFloat(r) { const b = r.pcm; const dv = new DataView(b.buffer, b.byteOffset, b.byteLength); const ch = r.channels || 1; const n = Math.floor(b.byteLength / 2 / ch); const x = new Float32Array(n); for (let i = 0; i < n; i++) { let v = 0; for (let c = 0; c < ch; c++) v += dv.getInt16((i * ch + c) * 2, true); x[i] = v / ch / 32768; } return { x, rate: r.rate || RATE }; }
   function resample(x, from, to) { if (from === to) return x; const k = from / to; const n = Math.floor(x.length / k); const y = new Float32Array(n); for (let j = 0; j < n; j++) { const p = j * k; const a = Math.floor(p); y[j] = (x[a] || 0) * (1 - (p - a)) + (x[a + 1] || 0) * (p - a); } return y; }
   const wcount = (t) => String(t).split(/\s+/).filter(Boolean).length;
-  // returns { lines: [{panel, who, voice, text, delivery, x, dur, model}], models, glitches, calls }
+  // ---- which voice models this key can use, and what went wrong (per model) ----
+  const isFlaggedModel = (m) => FLAGGED_MODELS.includes(m) || /-lite-/i.test(m);
+  const session = { fp: null, avail: null, dead: new Map(), working: '' };
+  function keyFp() { const G = root.VTS.gemini; const k = G.host && G.host.getKey ? String(G.host.getKey() || '') : ''; return k ? G.hashText(k) : ''; }
+  function resetSession() { const G = root.VTS.gemini; session.fp = null; session.avail = null; session.dead.clear(); session.working = ''; if (G.resetCooling) G.resetCooling(); }
+  function syncKey() { const fp = keyFp(); if (fp !== session.fp) { resetSession(); session.fp = fp; return true; } return false; }
+  function storyError(kind, perModel, extra) {
+    const info = Object.assign({ kind, perModel: perModel || [] }, extra || {});
+    info.retryAfter = Math.max(0, ...info.perModel.filter((c) => c.kind === 'rate').map((c) => c.retryAfter || 0));
+    const ex = explain(info, {}); const e = new Error(ex.title + ' ' + ex.text); e.story = info; e.friendly = ex.title; return e;
+  }
+  async function discoverModels(force) {
+    const G = root.VTS.gemini; syncKey(); if (session.avail && !force) return session.avail;
+    let listed = null; let listErr = null;
+    try { listed = await G.listTtsModels(); } catch (e) { listErr = G.classifyError(e); if (listErr.kind === 'key') throw storyError('key', [Object.assign(listErr, { model: 'models.list' })]); }
+    session.avail = listed ? { listed: true, all: listed, allowed: ALLOWED_MODELS.filter((m) => listed.includes(m)), other: listed.filter((m) => !ALLOWED_MODELS.includes(m) && !isFlaggedModel(m)), flagged: listed.filter(isFlaggedModel) }
+      : { listed: false, all: [], allowed: ALLOWED_MODELS.slice(), other: [], flagged: [], listErr };
+    return session.avail;
+  }
+  // Allowed models first; then any other non-flagged TTS model the key offers (QA still has to pass); a flagged/lite model only
+  // when the user chose it ("lower expressiveness").
+  function planModels(avail, o) {
+    if (o && o.useModel) return [o.useModel];
+    const plan = avail.listed ? avail.allowed.concat(avail.other) : ALLOWED_MODELS.slice();
+    if (!plan.length) throw storyError(avail.flagged.length ? 'onlyFlagged' : 'noTts', [], { flagged: avail.flagged, listed: avail.all });
+    return plan;
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const knobs = { minWait: 5, maxWait: 65, netWait: 4000 }; // seconds / ms; tests shorten them
+  function dominant(errs) {
+    const k = errs.map((c) => c.kind); if (!k.length) return 'other'; if (k.every((x) => x === k[0])) return k[0] === 'noFree' ? 'unavailable' : k[0];
+    if (k.every((x) => x === 'unavailable' || x === 'noFree')) return 'unavailable';
+    return ['rate', 'daily', 'busy', 'network', 'blocked', 'other'].find((x) => k.includes(x)) || 'unavailable';
+  }
+  async function ttsChain(text, opt, plan, ctx) {
+    const G = root.VTS.gemini; const errs = []; const order = session.working && plan.includes(session.working) ? [session.working].concat(plan.filter((m) => m !== session.working)) : plan;
+    for (const model of order) {
+      const d = session.dead.get(model);
+      if (d && (d.kind === 'unavailable' || d.kind === 'noFree' || Date.now() - d.at < 30 * 60 * 1000)) { errs.push(Object.assign({ model, skipped: true }, d)); continue; }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { const r = await G.ttsOnce(model, text, opt); ctx.calls++; session.working = model; return r; } catch (e) {
+          const c = G.classifyError(e); c.model = model;
+          if (c.kind === 'key') throw storyError('key', [c]);
+          if (c.kind === 'rate' && attempt < 2 && !(c.retryAfter > knobs.maxWait)) { const w = Math.min(knobs.maxWait, Math.max(knobs.minWait, Math.ceil(c.retryAfter || 20))); for (let t = w; t > 0; t--) { if (ctx.onStatus) ctx.onStatus(`Google's per-minute voice limit on ${model}: retrying in ${t} s…`); await sleep(1000); } continue; }
+          if ((c.kind === 'network' || c.kind === 'busy') && attempt < 1) { await sleep(knobs.netWait); continue; }
+          if (c.kind === 'daily' || c.kind === 'unavailable' || c.kind === 'noFree') session.dead.set(model, { kind: c.kind, msg: c.msg, at: Date.now(), retryAfter: c.retryAfter });
+          errs.push(c); break;
+        }
+      }
+    }
+    throw storyError(dominant(errs), errs, { avail: session.avail });
+  }
+  const KIND_LABEL = { noFree: 'no free-tier quota for this model on this key', rate: 'per-minute rate limit', daily: 'daily quota used up', unavailable: 'model not available for this key', key: 'API key rejected', network: 'network error', busy: 'Google overloaded', blocked: 'blocked by safety filter', other: 'error' };
+  // Human message for a Story voice failure (shown in the app; also used by tests). ctx.keyChangedRecently adds the shared-quota note.
+  function explain(info, ctx) {
+    ctx = ctx || {}; const pm = info.perModel || []; const models = (k) => [...new Set(pm.filter((c) => !k || c.kind === k).map((c) => c.model))].join(', ');
+    const lines = pm.map((c) => `${c.model}: ${KIND_LABEL[c.kind] || c.kind}${c.skipped ? ' (earlier today)' : ''}${c.msg ? ' — ' + c.msg : ''}`);
+    let title = 'Voice generation failed.'; let text = ''; let note = '';
+    switch (info.kind) {
+      case 'rate': title = 'Google\u2019s per-minute voice limit was hit.'; text = `On ${models('rate')}. This clears within a minute: the app retries automatically${info.retryAfter ? ' in ' + Math.ceil(info.retryAfter) + ' s' : ''}, or tap Try again now.`; break;
+      case 'daily': title = 'Today\u2019s free voice quota is used up for this key.'; text = `On ${models('daily')}. Google resets it at about 05:30 IST (midnight Pacific). The voices are queued and will be generated automatically after that. No silent or flat version is made.`;
+        if (ctx.keyChangedRecently) note = 'You changed the key recently: keys created in the same Google account (the same Google Cloud project) share one daily quota, so a second key from that account adds nothing. Make the new key with a different Google account at aistudio.google.com/apikey.';
+        else note = 'Tip: a key from a different Google account has its own quota (keys from the same account share it).';
+        if (info.avail && info.avail.flagged && info.avail.flagged.length) text += ` This key also offers ${info.avail.flagged.join(', ')} (separate quota, lower expressiveness): you can use it now instead.`; break;
+      case 'unavailable': title = 'This key can\u2019t use the Story voice models.'; text = `Not available for this key: ${[...new Set(pm.filter((c) => c.kind === 'unavailable' || c.kind === 'noFree').map((c) => c.model))].join(', ')}. New AI Studio keys (AQ.\u2026) often can\u2019t use gemini-2.5-flash-preview-tts.${info.avail && info.avail.flagged && info.avail.flagged.length ? ' The key does offer ' + info.avail.flagged.join(', ') + ' (lower expressiveness).' : ''}`; break;
+      case 'onlyFlagged': title = 'This key only offers a lower-expressiveness voice model.'; text = `Available: ${(info.flagged || []).join(', ')}. These read flatter than the Story models (${ALLOWED_MODELS.join(', ')}). You can use one anyway; the voice checks still run.`; break;
+      case 'noTts': title = 'This key offers no Gemini voice (TTS) models.'; text = `Models listed for the key: ${(info.listed || []).slice(0, 6).join(', ') || 'none'}. Make a key at aistudio.google.com/apikey with a different Google account.`; break;
+      case 'key': title = 'Gemini rejected this API key.'; text = 'Check the key in Settings (paste it again, or make a new one at aistudio.google.com/apikey).'; break;
+      case 'network': title = 'Couldn\u2019t reach Google.'; text = 'Check the internet connection (or VPN / data saver) and tap Try again now.'; break;
+      case 'busy': title = 'Google\u2019s voice models are overloaded right now.'; text = 'Wait a minute and tap Try again now.'; break;
+      case 'blocked': title = 'Gemini blocked a line.'; text = 'Its safety filter refused one of the lines; edit the story and try again.'; break;
+      default: text = 'See the details below.';
+    }
+    return { title, text, note, lines };
+  }
+  // returns { lines: [{panel, who, voice, text, delivery, x, dur, model}], models, glitches, calls, avail, acceptFlagged }
   async function castVoices(plan, o) {
     o = o || {}; const VTS = root.VTS; const G = VTS.gemini; const S = VTS.story; const all = S.voiceLines(plan); const groups = new Map();
     all.forEach((l) => { if (!groups.has(l.who)) groups.set(l.who, []); groups.get(l.who).push(l); });
-    const out = []; const models = []; const glitches = []; let calls = 0; const cache = VTS.db && VTS.db.cache;
+    if (o.onStatus) o.onStatus('Checking which voice models this key can use…');
+    const avail = await discoverModels(!!o.rediscover); const mplan = planModels(avail, o); const ctx = { calls: 0, onStatus: o.onStatus };
+    const out = []; const models = []; const glitches = []; const cache = VTS.db && VTS.db.cache;
     const req = async (text, opt) => {
-      const key = 'story-tts:' + G.hashText(JSON.stringify([opt.voice, opt.parts || text, opt.style || '']));
+      const key = 'story-tts:' + G.hashText(JSON.stringify([opt.voice, opt.parts || text, opt.style || '', o.useModel || '']));
       const hit = cache ? await cache.get(key).catch(() => null) : null; if (hit && hit.x) { models.push(hit.model); return hit; }
-      calls++; const r = await G.ttsRequest(text, Object.assign({ allowModels: ALLOWED_MODELS, model: ALLOWED_MODELS[0] }, opt)); const f = pcmToFloat(r); const val = { x: resample(f.x, f.rate, RATE), model: r.model };
+      const r = await ttsChain(text, opt, mplan, ctx); const f = pcmToFloat(r); const val = { x: resample(f.x, f.rate, RATE), model: r.model };
       models.push(r.model); if (cache) await cache.set(key, val).catch(() => {}); return val;
     };
     for (const [who, ls] of groups) {
       if (o.onStatus) o.onStatus(`Voicing ${who === 'narrator' ? 'the narrator' : (plan.characters.find((c) => c.id === who) || {}).name} (${ls[0].voice})…`);
-      let segs = null; let model = '';
-      const tm0 = (G.host.getTtsModel && G.host.getTtsModel()) || ALLOWED_MODELS[0]; const multiStyle = new Set(ls.map((l) => l.delivery)).size > 1;
-      if (ls.length > 1 && (!multiStyle || !G.ttsIsStructured || G.ttsIsStructured(ALLOWED_MODELS.includes(tm0) ? tm0 : ALLOWED_MODELS[0]))) { // one request per character: one part per line with its own delivery
+      let segs = null; let model = ''; const target = session.working || mplan[0]; const multiStyle = new Set(ls.map((l) => l.delivery)).size > 1;
+      if (ls.length > 1 && (!multiStyle || G.ttsIsStructured(target))) { // one request per character: one part per line with its own delivery
         const parts = ls.map((l) => ({ text: l.text, style: S.styleFor(plan, who, l.delivery) }));
         const r = await req(ls.map((l) => l.text).join('\n\n'), { voice: ls[0].voice, parts, style: S.styleFor(plan, who, ls[0].delivery) + '. Read each paragraph separately, with a clear one-second pause between paragraphs' }); model = r.model;
         const ct = cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g)));
         segs = splitTake(ct.x, ls.length, ls.map((l) => wcount(l.text)), RATE);
-        if (segs && !segs.every((s, k) => { const spw = s.length / RATE / Math.max(1, wcount(ls[k].text)); return spw > 0.15 && spw < 1.3; })) segs = null;
+        if (segs && !segs.every((sg, k) => { const spw = sg.length / RATE / Math.max(1, wcount(ls[k].text)); return spw > 0.15 && spw < 1.3; })) segs = null;
       }
       if (!segs) { segs = []; for (const l of ls) { const r = await req(l.text, { voice: l.voice, style: S.styleFor(plan, who, l.delivery) }); model = r.model; const ct = cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g))); segs.push(splitTake(ct.x, 1, [1], RATE)[0]); } }
       ls.forEach((l, k) => { const x = normalize(segs[k], who === 'narrator' ? -20 : l.delivery === 'whisper' ? -19 : -17, 0.85); out.push(Object.assign({}, l, { x, dur: x.length / RATE, model })); });
     }
     out.sort((a, b) => a.panel - b.panel || (a.who === 'narrator' ? -1 : 1));
-    return { lines: out, models: [...new Set(models)], glitches, calls };
+    const used = [...new Set(models)];
+    return { lines: out, models: used, glitches, calls: ctx.calls, avail, acceptFlagged: !!(o.useModel && isFlaggedModel(o.useModel)) };
   }
   // short voice preview for the cast picker (one TTS request, cached)
-  async function previewVoice(plan, who, voice) {
-    const VTS = root.VTS; const S = VTS.story; const c = plan.characters.find((q) => q.id === who); const text = who === 'narrator' ? 'Once upon a quiet morning, something felt different.' : `Hi, I'm ${c ? c.name : 'here'}. Did you see that?`;
-    const key = 'story-prev:' + voice + ':' + who; const cache = VTS.db && VTS.db.cache; let hit = cache ? await cache.get(key).catch(() => null) : null;
-    if (!hit) { const r = await VTS.gemini.ttsRequest(text, { voice, style: S.styleFor(plan, who, 'light'), allowModels: ALLOWED_MODELS, model: ALLOWED_MODELS[0] }); const f = pcmToFloat(r); hit = { x: resample(f.x, f.rate, RATE) }; if (cache) await cache.set(key, hit).catch(() => {}); }
+  async function previewVoice(plan, who, voice, o) {
+    o = o || {}; const VTS = root.VTS; const S = VTS.story; const c = plan.characters.find((q) => q.id === who); const text = who === 'narrator' ? 'Once upon a quiet morning, something felt different.' : `Hi, I'm ${c ? c.name : 'here'}. Did you see that?`;
+    const key = 'story-prev:' + voice + ':' + who + ':' + (o.useModel || ''); const cache = VTS.db && VTS.db.cache; let hit = cache ? await cache.get(key).catch(() => null) : null;
+    if (!hit) { const avail = await discoverModels(false); const r = await ttsChain(text, { voice, style: S.styleFor(plan, who, 'light') }, planModels(avail, o), { calls: 0, onStatus: o.onStatus }); const f = pcmToFloat(r); hit = { x: resample(f.x, f.rate, RATE), model: r.model }; if (cache) await cache.set(key, hit).catch(() => {}); }
     const ac = VTS.render.audioCtx(); if (ac.state === 'suspended') await ac.resume(); const b = ac.createBuffer(1, hit.x.length, RATE); b.copyToChannel(hit.x, 0); const s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(); return s;
   }
 
-  const api = { RATE, ALLOWED_MODELS, FLAGGED_MODELS, cleanTake, splitTake, features, scan, normalize, castQa, placeLines, mix, toAudioBuffer, wavBytes, castVoices, previewVoice, pcmToFloat, resample, median, semis };
+  const api = { knobs, discoverModels, resetSession, syncKey, keyFp, explain, isFlaggedModel, planModels, RATE, ALLOWED_MODELS, FLAGGED_MODELS, cleanTake, splitTake, features, scan, normalize, castQa, placeLines, mix, toAudioBuffer, wavBytes, castVoices, previewVoice, pcmToFloat, resample, median, semis };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) { root.VTS = root.VTS || {}; root.VTS.storyAudio = api; }
 }(typeof window !== 'undefined' ? window : null));

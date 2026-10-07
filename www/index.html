@@ -68,6 +68,12 @@
               <div id="st-cast"></div>
               <button type="button" class="btn" id="st-voice-go">🎙 Generate voices</button>
               <div id="st-voice-status" class="status" role="status"></div>
+              <div id="st-voice-err" class="st-err hidden" role="alert">
+                <b id="st-err-title"></b><p id="st-err-text"></p><p id="st-err-note" class="small"></p>
+                <ul id="st-err-lines" class="small"></ul>
+                <div class="st-err-btns"><button type="button" class="btn" id="st-retry">↻ Try again now</button><button type="button" class="btn ghost hidden" id="st-use-flagged"></button></div>
+              </div>
+              <p class="small muted" id="st-models"></p>
               <div id="st-voice-qa" class="st-qa"></div>
             </div>
             <div class="card">
