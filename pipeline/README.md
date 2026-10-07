@@ -120,3 +120,20 @@ billing enabled** on the key (paid tier, about cents per Short).
 
 Quota: since Jun 2026 `videos.insert` has its own bucket (100 uploads/day, 1 unit each); 6/day plus a channels.list check is far below the limit.
 YouTube has also been seen enforcing an undocumented "Video Uploads per day" limit of roughly 7 per project per day. 6 fits under it.
+
+## Story mode (headless): `pipeline/story-render.js`
+Storyline -> story board (Gemini, `www/js/story.js`, same client + model fallback as the app) -> voiced cast (one locked, expressive
+Gemini TTS voice per character + optional narrator; delivery per suspense beat; flattening models refused) -> frame-exact
+1080x1920 24 fps render with the app's own `storydraw.js` renderer and `storyaudio.js` mixer -> H.264/AAC MP4 -> QA -> contact sheet.
+
+    node pipeline/story-render.js --story "She finds a note on her coffee cup that says 'Don't turn around'" \
+      --tone warm --beats 8 --platform reel --stills --out /workspace/receipts-pipeline/samples/story-sample-1
+
+Outputs `<out>.plan.json`, `<out>.md` (the 11-section doc), `<out>.lines/`, `<out>.voice-log.json`, `<out>.mp4`, `<out>.qa.json`,
+`<out>.contact.png`, `<out>.render-info.json`, optional `<out>.stills/`. Resumable (plan + raw takes cached in `<out>.takes/`).
+Exit 4 = TTS daily quota exhausted on every allowed model: the render is queued in `/workspace/receipts-pipeline/story-queue/`
+(nothing silent or flat is rendered); re-run the command in the queue file after the reset (05:30 IST).
+QA: format/duration, hard silence on the silence beat (< -55 dBFS), audio-qa (bursts/tones/clicks/harsh/clip), per-character
+pitch/timbre distinctness measured on the MP4, no captions over faces (every frame), music under voice.
+Offline checks: `node tests/story-engine.js`; frame stills: `node tests/live/story-stills.js <plan.json> <out-prefix>`.
+No workflow runs Story mode (by design).

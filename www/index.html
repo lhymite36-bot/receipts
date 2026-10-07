@@ -24,12 +24,63 @@
     <main>
       <!-- ================= CREATE ================= -->
       <section id="view-create" class="view active" aria-label="Create">
+        <div class="seg mode-seg" id="mode-seg" role="tablist" aria-label="Mode"><button type="button" role="tab" data-mode="myth" class="on">🧾 Myth-bust</button><button type="button" role="tab" data-mode="story">📖 Story</button></div>
         <nav class="stepper" aria-label="Steps">
           <button type="button" class="step" data-step="idea"><i>1</i><span>Idea</span></button>
           <button type="button" class="step" data-step="script"><i>2</i><span>Script</span></button>
           <button type="button" class="step" data-step="voice"><i>3</i><span>Voice</span></button>
           <button type="button" class="step" data-step="render"><i>4</i><span>Render</span></button>
         </nav>
+
+        <!-- Story mode: storyline -> suspense story board -> voiced stick-figure short -->
+        <div class="pane story-pane" id="pane-story">
+          <div class="hero">
+            <h1>Tell me a storyline</h1>
+            <p class="muted">One line is enough. Gemini boards a short stick-figure suspense story: a character lock, a colour script, a suspense plan, the shots and a still prompt for each panel. Every character gets their own Gemini voice, then it renders as a 9:16 video with captions.</p>
+          </div>
+          <label class="field"><span class="label-row"><span>Storyline</span><span class="muted small" id="st-count">0 words</span></span>
+            <span class="st-line-wrap"><textarea id="st-line" rows="3" placeholder="She finds a note on her coffee cup that says “Don’t turn around”"></textarea>
+            <button type="button" id="st-mic" class="st-mic" aria-label="Dictate the storyline" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button></span></label>
+          <div id="st-mic-status" class="status" role="status"></div>
+          <div class="chips" id="st-examples" aria-label="Example storylines"></div>
+          <div class="field"><span class="label-row"><span>Tone</span><span class="muted small">optional</span></span><div class="chips" id="st-tone" role="radiogroup"></div></div>
+          <div class="field"><span class="label-row"><span>Length</span><span class="muted small">24–32 s with the end card</span></span>
+            <div class="seg" id="st-beats" role="radiogroup"><button type="button" data-v="6">6 beats</button><button type="button" data-v="8">8 beats</button><button type="button" data-v="12">12 beats</button></div></div>
+          <div class="field"><span class="label-row"><span>Platform</span></span>
+            <div class="seg" id="st-platform" role="radiogroup"><button type="button" data-v="reel">9:16 Reel</button><button type="button" data-v="tiktok">TikTok</button><button type="button" data-v="carousel">Carousel</button><button type="button" data-v="x">X comic</button></div></div>
+          <label class="st-check"><input type="checkbox" id="st-narrator" checked> <span>Narrator voice for the hook and caption lines</span></label>
+          <label class="st-check"><input type="checkbox" id="st-part1"> <span>Part 1 of a series (ends on a cliffhanger)</span></label>
+          <button type="button" class="btn primary big" id="st-go"><span>📖 Board my story</span></button>
+          <div id="st-status" class="status" role="status"></div>
+          <div id="st-result" class="hidden">
+            <div class="card">
+              <div class="card-head"><h2 id="st-title">Story</h2><span class="muted small" id="st-meta"></span></div>
+              <p class="small muted">Thumbnail storyboard: tap a panel to preview it</p>
+              <div class="st-strip" id="st-strip"></div>
+              <div class="st-actions">
+                <button type="button" class="chip" id="st-copy-doc">📋 Copy whole doc</button><button type="button" class="chip" id="st-copy-prompts">🖼 Copy still prompts</button><button type="button" class="chip" id="st-copy-social">💬 Copy social caption</button>
+                <button type="button" class="chip" id="st-dl-md">⬇ Markdown</button><button type="button" class="chip" id="st-dl-json">⬇ JSON</button><button type="button" class="chip" id="st-dl-png">⬇ Still frames (PNG)</button>
+              </div>
+              <p class="small muted" id="st-report"></p>
+            </div>
+            <div class="card" id="st-cast-card">
+              <div class="card-head"><h2>Cast &amp; voices</h2><span class="muted small">each voice stays locked across every shot</span></div>
+              <div id="st-cast"></div>
+              <button type="button" class="btn" id="st-voice-go">🎙 Generate voices</button>
+              <div id="st-voice-status" class="status" role="status"></div>
+              <div id="st-voice-qa" class="st-qa"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>Preview &amp; render</h2><span class="muted small" id="st-dur"></span></div>
+              <div class="st-stage"><canvas id="st-canvas" width="1080" height="1920" aria-label="Story preview"></canvas></div>
+              <div class="st-row"><button type="button" class="btn" id="st-play">▶ Preview</button><button type="button" class="btn primary" id="st-render">🎬 Render 1080×1920</button></div>
+              <div id="st-render-status" class="status" role="status"></div>
+              <div class="bar hidden" id="st-bar"><i id="st-bar-fill"></i></div>
+              <a class="btn hidden" id="st-download" download="story.mp4">💾 Save video</a>
+            </div>
+            <div id="st-sections" class="st-sections"></div>
+          </div>
+        </div>
 
         <!-- Step 1: Idea -->
         <div class="pane" id="pane-idea">
@@ -379,6 +430,10 @@
   <script src="js/three3d.js"></script>
   <script src="js/captions16.js"></script>
   <script src="js/ideas.js"></script>
+  <script src="js/story.js"></script>
+  <script src="js/storydraw.js"></script>
+  <script src="js/storyaudio.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/storyui.js"></script>
 </body>
 </html>

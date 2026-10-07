@@ -376,6 +376,9 @@
       // Each speaker's own delivery goes into the instruction (older models have no per-turn style field).
       const per = o.speakers.filter((sp) => sp.style).map((sp) => sp.speaker + ' sounds ' + sp.style.replace(/\.\s*$/, '')).join('. ');
       part.text = 'TTS the following conversation between ' + o.speakers[0].speaker + ' and ' + o.speakers[1].speaker + (per ? '. ' + per + '.' : (o.style ? ' (' + o.style + ')' : '')) + ' Keep the two voices clearly different, pause briefly before punchlines:\n' + text;
+    } else if (structured && Array.isArray(o.parts) && o.parts.length) {
+      // Story mode: one request per character, one part per line, each with its own delivery (speech_metadata.style).
+      reqParts = o.parts.map((q) => { const pp = { text: String(q.text).replace(/\s+/g, ' ').trim() }; if (q.style) pp.speech_metadata = { style: q.style }; return pp; });
     } else {
       if (structured && o.style) part.speech_metadata = { style: o.style };
       if (!structured && o.prefix) part.text = o.prefix.replace(/:?\s*$/, ': ') + text;
@@ -394,7 +397,9 @@
     try {
       try { data = await send(); } catch (err) {
         const m = String(err && err.message || '').toLowerCase();
-        if (err && err.status === 400 && part.speech_metadata && (m.includes('speech_metadata') || m.includes('unknown name') || m.includes('invalid json'))) {
+        if (err && err.status === 400 && reqParts[0] !== part && reqParts.some((q) => q.speech_metadata) && !multi && (m.includes('speech_metadata') || m.includes('unknown name') || m.includes('invalid json'))) {
+          body.contents[0].parts = reqParts.map((q) => ({ text: q.text })); data = await send();
+        } else if (err && err.status === 400 && part.speech_metadata && (m.includes('speech_metadata') || m.includes('unknown name') || m.includes('invalid json'))) {
           delete part.speech_metadata; data = await send(); // style metadata not accepted: plain verbatim text
         } else throw err;
       }
@@ -415,12 +420,14 @@
   }
   // One TTS request with the model fallback chain. host.getTtsModel/setTtsModel remember the model that works.
   async function ttsRequest(text, o) {
-    const first = o.model || (host.getTtsModel ? host.getTtsModel() : '') || TTS_DEFAULT_MODEL;
-    const queue = [first].concat(TTS_MODELS);
+    // o.allowModels (Story mode): only these models, in this order, never the discovery list (flattening models are refused).
+    const pref = o.model || (host.getTtsModel ? host.getTtsModel() : '') || TTS_DEFAULT_MODEL;
+    const first = o.allowModels && !o.allowModels.includes(pref) ? o.allowModels[0] : pref;
+    const queue = [first].concat(o.allowModels || TTS_MODELS);
     const tried = new Set(); let lastErr = null; let discovered = false; let quotaHit = false; let busyHit = false;
     for (let i = 0; i <= queue.length; i++) {
       if (i === queue.length) {
-        if (discovered) break;
+        if (discovered || o.allowModels) break;
         discovered = true;
         try { (await listTtsModels()).slice(0, 4).forEach((m) => { if (!tried.has(m)) queue.push(m); }); } catch (_) { /* ignore */ }
         if (i === queue.length) break;

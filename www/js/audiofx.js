@@ -29,6 +29,11 @@
     tada: { file: 'tada', gain: 0.6, label: 'Ta-da' },
     riser: { synth: 'riser', gain: 0.4, label: 'Riser' },
     bell: { file: 'bell', gain: 0.4, label: 'Bell' },
+    // Story mode effects
+    hush: { synth: 'hush', gain: 0.45, label: 'Hush (soft shh)' },
+    creak: { synth: 'creak', gain: 0.5, label: 'Door creak' },
+    gulp: { synth: 'gulp', gain: 0.6, label: 'Gulp' },
+    clink: { synth: 'clink', gain: 0.4, label: 'Cup clink' },
   };
   const SFX_IDS = Object.keys(SFX);
   const MUSIC = [['quirky', 'Quirky comedy'], ['lofi', 'Lo-fi chill'], ['upbeat', 'Upbeat pop'], ['chill', 'Soft pads'], ['suspense', 'Suspense'], ['none', 'No music']];
@@ -48,6 +53,10 @@
     let out;
     switch (id) {
       case 'whoosh': { out = new Float32Array(len(0.5)); const f = svf(sr); for (let i = 0; i < out.length; i++) { const p = i / out.length; const env = Math.sin(Math.PI * Math.pow(p, 0.7)) ** 2; const fc = 300 + 2600 * Math.sin(Math.PI * p); out[i] = f(noise(), fc, 0.6).bp * env * 1.6; } break; }
+      case 'hush': { out = new Float32Array(len(0.9)); const f = svf(sr); for (let i = 0; i < out.length; i++) { const p = i / out.length; const env = Math.sin(Math.PI * Math.min(1, p * 1.15)) ** 2 * (p < 0.87 ? 1 : (1 - p) / 0.13); out[i] = f(noise(), 3800 + 900 * Math.sin(Math.PI * p), 0.9).bp * env * 0.7; } break; }
+      case 'creak': { out = new Float32Array(len(1.1)); let ph = 0; const f = svf(sr); for (let i = 0; i < out.length; i++) { const t = i / sr; const p = t / 1.1; const fr = 95 + 60 * Math.sin(TAU * 0.9 * t) + 25 * Math.sin(TAU * 3.1 * t); ph += TAU * fr / sr; const saw = 2 * ((ph / TAU) % 1) - 1; const grain = 0.6 + 0.4 * Math.sign(Math.sin(TAU * fr * 0.5 * t)); const env = Math.sin(Math.PI * p) ** 0.8; out[i] = f(saw * grain, 900 + 500 * Math.sin(TAU * 0.7 * t), 0.35).bp * env * 0.9; } break; }
+      case 'gulp': { out = new Float32Array(len(0.32)); let ph = 0; for (let i = 0; i < out.length; i++) { const t = i / sr; const fr = 160 + 420 * Math.exp(-t * 16) * (t < 0.12 ? 1 : 0.4); ph += TAU * fr / sr; const env = Math.exp(-((t - 0.09) ** 2) / 0.0035); out[i] = (Math.sin(ph) + 0.25 * Math.sin(2 * ph)) * env * 0.8; } break; }
+      case 'clink': { out = new Float32Array(len(0.6)); [2630, 3950, 5210].forEach((fq, k) => { for (let i = 0; i < out.length; i++) { const t = i / sr; out[i] += Math.sin(TAU * fq * t) * Math.exp(-t * (9 + k * 5)) * (0.5 / (k + 1)); } }); break; }
       case 'boom': { // deep bass hit with a pitch drop and a long, saturated tail
         out = new Float32Array(len(1.4)); let ph = 0; let ph2 = 0; const lp = onePole(sr, 900);
         for (let i = 0; i < out.length; i++) { const t = i / sr; const f = 42 + 90 * Math.exp(-t * 28); ph += TAU * f / sr; ph2 += TAU * f * 2.01 / sr; const env = Math.exp(-t * 2.6) * Math.min(1, t * 400); const click = t < 0.012 ? noise() * (1 - t / 0.012) * 0.6 : 0; const x = Math.sin(ph) + 0.35 * Math.sin(ph2) * Math.exp(-t * 6); out[i] = lp(Math.tanh(x * 2.4) * env * 0.85 + click); }
@@ -81,6 +90,7 @@
     lofi: { bpm: 80, prog: [[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [48, 52, 55, 59]], bass: 'root', lead: 'keys', drums: 'lofi', level: 0.85 },
     upbeat: { bpm: 114, prog: [[60, 64, 67], [55, 59, 62], [57, 60, 64], [53, 57, 60]], bass: 'eighths', lead: 'arp', drums: 'pop', level: 0.8 },
     chill: { bpm: 68, prog: [[48, 55, 60, 64], [45, 52, 57, 60], [41, 48, 53, 57], [43, 50, 55, 59]], bass: 'none', lead: 'pad', drums: 'none', level: 0.9 },
+    storybook: { bpm: 84, prog: [[60, 64, 67, 71], [57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 65]], bass: 'root', lead: 'pizz', drums: 'tick', level: 0.75 },
     suspense: { bpm: 92, prog: [[45, 52, 57], [45, 52, 56], [41, 48, 53], [44, 51, 56]], bass: 'pulse', lead: 'drone', drums: 'tick', level: 0.85 },
   };
   function music(style, sr) {

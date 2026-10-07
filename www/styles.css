@@ -290,3 +290,39 @@ input[type=range] { width: 100%; accent-color: var(--accent2); }
 .beat .b-comedy { flex-wrap: wrap; }
 .beat .b-comedy select { max-width: 150px; min-height: 34px; font-size: 12.5px; padding: 0 26px 0 8px; border-radius: 10px; }
 .beat .b-comedy .b-sticker { flex: 1; min-width: 110px; min-height: 34px; font-size: 13px; }
+
+/* ---------- Story mode ---------- */
+.mode-seg { margin: 6px 0 4px; }
+#view-create.story-mode .stepper, #view-create.story-mode > .pane:not(#pane-story) { display: none !important; }
+#pane-story { display: none; }
+#view-create.story-mode #pane-story { display: block; animation: fade .25s ease; }
+.st-line-wrap { position: relative; display: block; }
+.st-line-wrap textarea { padding-right: 64px; }
+.st-mic { position: absolute; right: 8px; top: 8px; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--border2); background: var(--surface2); color: var(--text); display: grid; place-items: center; cursor: pointer; }
+.st-mic svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.st-mic[aria-pressed="true"] { background: var(--accent); border-color: transparent; animation: pulse 1.4s ease infinite; }
+.st-check { display: flex; align-items: center; gap: 10px; margin: 10px 2px; font-size: 14.5px; }
+.st-check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.st-strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; scroll-snap-type: x mandatory; }
+.st-thumb { flex: 0 0 auto; width: 92px; scroll-snap-align: start; border: 1px solid var(--border2); border-radius: 10px; overflow: hidden; background: var(--bg2); padding: 0; cursor: pointer; color: var(--text); }
+.st-thumb canvas { display: block; width: 92px; height: 164px; }
+.st-thumb span { display: block; font: 700 11px Montserrat, system-ui, sans-serif; padding: 4px 5px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-thumb.peak { border-color: var(--accent); } .st-thumb.end { border-style: dashed; }
+.st-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.st-cast-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.st-cast-row:last-child { border-bottom: 0; }
+.st-swatch { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--cream); }
+.st-cast-row b { display: block; font-size: 15px; } .st-cast-row small { color: var(--muted); display: block; font-size: 12.5px; line-height: 1.35; }
+.st-cast-row select { margin-top: 6px; width: 100%; min-height: 40px; }
+.st-prev { min-height: 40px; min-width: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text); cursor: pointer; font-weight: 700; }
+.st-qa { font-size: 13.5px; } .st-qa div { margin: 3px 0; } .st-qa .ok { color: var(--ok); } .st-qa .bad { color: var(--err); }
+.st-stage { display: grid; place-items: center; background: var(--bg2); border-radius: 12px; padding: 10px; }
+.st-stage canvas { width: min(100%, 300px); aspect-ratio: 9 / 16; height: auto; border-radius: 10px; background: #fff; }
+.st-row { display: flex; gap: 8px; margin-top: 10px; } .st-row .btn { flex: 1; }
+.st-sections details { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 8px 0; }
+.st-sections summary { cursor: pointer; padding: 13px 14px; font-weight: 800; list-style: none; display: flex; justify-content: space-between; }
+.st-sections summary::after { content: '▾'; color: var(--muted); } .st-sections details[open] summary::after { content: '▴'; }
+.st-sections .md { padding: 0 14px 12px; font-size: 14px; line-height: 1.5; overflow-x: auto; }
+.st-sections .md h4 { margin: 12px 0 4px; font-size: 14.5px; } .st-sections .md ul { margin: 4px 0; padding-left: 18px; }
+.st-sections .md pre { white-space: pre; font-size: 12px; background: var(--bg2); padding: 8px; border-radius: 8px; overflow-x: auto; }
+.st-sections .md code { background: var(--bg2); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
