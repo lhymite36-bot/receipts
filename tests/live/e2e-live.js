@@ -50,6 +50,7 @@ function serve() {
   const MINC = Number(process.env.MIN_CLAIM_LINES || 0); const nClaim = pkg.speakers.split(',').filter((x) => x === 'brain').length;
   if (!PKGF && MINC && nClaim < MINC) { console.log(t(), 'REJECT_SCRIPT claim lines', nClaim, '<', MINC); await browser.close(); srv.close(); process.exit(3); }
   fs.writeFileSync(OUTF + '.pkg.json', JSON.stringify(await app(() => window.VTS.app.project.pkg), null, 1));
+  if (process.env.SCRIPT_ONLY === '1') { console.log(t(), 'SCRIPT_ONLY done'); await browser.close(); srv.close(); return; } // Receipts pipeline: voice comes from pipeline/voice-cast.js
   // Resume: <out>.voice.wav from an interrupted run is reused (no TTS call); a fresh AI voice is saved there right away.
   const VOICEF = OUTF + '.voice.wav'; let voice;
   const exportVoice = async () => { const vb64 = await app(async () => { const b = window.VTS.app.project.voice && window.VTS.app.project.voice.blob; if (!b) return ''; return await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(String(fr.result).split(',')[1]); fr.readAsDataURL(b); }); }); if (vb64) fs.writeFileSync(VOICEF, Buffer.from(vb64, 'base64')); return !!vb64; };

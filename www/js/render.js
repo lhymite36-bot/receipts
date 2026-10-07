@@ -390,7 +390,7 @@
           ctx.fillStyle = 'rgba(0,0,0,0.5)'; roundRect(ctx, -lw / 2, -40 * s, lw, 80 * s, 40 * s); ctx.fill(); ctx.strokeStyle = p.hi; ctx.lineWidth = 4 * s; ctx.stroke();
           ctx.fillStyle = '#fff'; ctx.fillText(label, 0, 2 * s, lw - 60 * s); ctx.restore();
         }
-      } else if (step === 4 && this.o.handle) {
+      } else if (step === 4 && this.o.handle && !(this.cx && this.cx.cta)) { // one CTA only: the comedy CTA sticker wins over the Follow pill
         let first = i; while (first > 0 && this.timeline[first - 1].step === 4) first--;
         const a = easeOutBack(clamp01((t - this.timeline[first].start) / 0.4));
         ctx.save(); ctx.translate(this.LY.cta[0] * s, this.LY.cta[1] * s); ctx.scale(a, a); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -572,7 +572,7 @@
           ctx.fillStyle = d <= step ? p.hi : hexA('#ffffff', 0.35); ctx.fill();
         }
         ctx.restore();
-      } else if (step === 4 && this.o.handle) {
+      } else if (step === 4 && this.o.handle && !(this.cx && this.cx.cta)) { // one CTA only: the comedy CTA sticker wins over the Follow pill
         let first = i; while (first > 0 && this.timeline[first - 1].step === 4) first--;
         const a = easeOut(clamp01((t - this.timeline[first].start) / 0.4));
         ctx.save(); ctx.globalAlpha = a;

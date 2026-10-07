@@ -278,6 +278,19 @@
     return f;
   }
 
+  // Receipts "Comic Ink": scenes pushed to a cream-paper / ink-black duotone, with reds snapped to stamp red (#E23D28).
+  // Pure per-colour mapping (cached by the Stage), so it costs nothing per frame.
+  const INK = [13, 13, 13]; const CREAM = [245, 240, 232]; const STAMP = [226, 61, 40];
+  function inkTone(orig, c) {
+    const [r, g, b] = orig; const mx = Math.max(r, g, b); const mn = Math.min(r, g, b); const sat = mx ? (mx - mn) / mx : 0;
+    const l = (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) / 255;
+    const k = Math.min(1, Math.max(0, (l - 0.5) * 1.25 + 0.5)); // a little extra contrast
+    const duo = [0, 1, 2].map((q) => INK[q] + (CREAM[q] - INK[q]) * k);
+    const reddish = r > 120 && r > g * 1.45 && r > b * 1.45 && sat > 0.35;
+    if (reddish) { const d = 0.35 + 0.65 * Math.min(1, l * 1.6); return [0, 1, 2].map((q) => STAMP[q] * d + duo[q] * 0.08); }
+    const keep = 0.18 * sat; // a whisper of the original hue so props stay readable
+    return [0, 1, 2].map((q) => duo[q] * (1 - keep) + c[q] * keep);
+  }
   // ======================= stage (drawing) =======================
   class Stage {
     constructor() { this.colCache = new Map(); this.bgCache = new Map(); this.setPreset('ink'); this.amb = null; this.lw = 8; }
@@ -288,6 +301,7 @@
       const l = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
       c = [l + (c[0] - l) * a.sat, l + (c[1] - l) * a.sat, l + (c[2] - l) * a.sat];
       if (this.pid === 'mono') c = c.map((v) => 128 + (v - 128) * 1.12);
+      if (this.pid === 'ink') c = inkTone(rgb, c);
       return c;
     }
     // Lit colour (scene ambient + grade) and emissive colour (grade only).

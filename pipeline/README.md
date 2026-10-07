@@ -32,14 +32,41 @@ Its cron (03:30 IST) is commented out and the job is gated on repo variable `REC
 Env: `COUNT` (6), `LEN` (60 = ~45-58 s script), `HUMOUR` (3), `TONE` (sarcastic), `SLOTS_IST`, `OUT_ROOT`, `STATE_FILE`,
 `PRIVACY` (scheduled|public|unlisted|private), `NOTIFY=false`, `SYNTHETIC=1`, `EXPECT_CHANNEL`.
 
-## Voice (pipeline/voice.env)
-Gemini TTS (same engine as Voice to Short, best TTS model available: falls back automatically), multi-speaker with per-turn style metadata:
-- **Skeptic / narrator: `Kore`**, a deadpan, crisp voice with comic timing and pauses before reveals
-- **Claim Guy: `Fenrir`**, an overconfident hype-bro, loud, fast and theatrical
-- punchline beats get an extra "beat of silence, then slower and drier" direction
-- single-voice scripts: `Kore` with a sarcastic, punchy, high-energy style
-Scripts are written for the ear: short lines, interjections, punchline alone on its own beat, at least 3 Claim Guy lines
-(a script without them is rejected *before* TTS is spent, twice, then accepted).
+## Voice (pipeline/voice.env + pipeline/voice-cast.js)
+Each character is voiced **separately** with Gemini TTS (prebuilt voices), then assembled with our own timing:
+- **Skeptic / narrator: `Algenib`**, a low, gravelly voice (~110-130 Hz), dry/deadpan/sarcastic style, clipped,
+  "..." before punchlines, 0.6 s silence before each punch beat
+- **Claim Guy: `Puck`**, a bright, high voice (~225 Hz), loud/fast/hyped influencer style, +4.5 dB, tempo x1.08,
+  internal pauses squeezed to 0.12 s so he rattles on
+- Request: one take per character (all of that character's turns, style as `speech_metadata.style` on 3.5+ models,
+  the "Say ...:" prefix on older ones). The take is split per turn by an ASR-verified aligner (Gemini audio
+  transcription; a read-aloud instruction preamble is trimmed). If it can't be verified, it falls back to one request per turn.
+  Raw takes are cached in `<out>.takes/`, so a quota stop never wastes requests that already succeeded.
+- Models: `TTS_MODELS=gemini-3.8-flash-tts,gemini-2.5-flash-preview-tts` only. **Flattening models are refused**
+  (`gemini-3.8-flash-lite-tts`, `gemini-3.1-flash-tts-preview`: measured pitch variation 2.6 st vs 5.0 st on 2.5).
+  Override with `ALLOW_FLAGGED_MODEL=1`, which marks the Short as flagged in the log.
+  On a 429 it waits up to `TTS_MAX_WAIT` s; when no allowed model has quota it exits 4 and render-day.sh **holds** the remaining
+  Shorts (nothing ships with a worse voice).
+- **Voice QA (objective, every Short)**, in `<out>.voice-log.json`: for each turn, the voice name, model and method,
+  start time, F0 (median, semitone std), loudness (dB, std), spectral centroid, words/s, and an ASR transcript with a
+  similarity score. Each Short must pass all of these:
+  - pitch gap >= 4 st or centroid gap >= 20%
+  - Claim Guy faster (words/s) and >= 2 dB louder
+  - every line nearer its own character's pitch
+  - pitch variation >= 2 st per character
+  - Claim Guy loudness std >= 3 dB
+  - every take ASR >= 0.75
+  - no flagged model
+
+  A failure gets one fresh take, and a second failure means that Short is not shipped (exit 5; `ALLOW_FLAT=1` overrides).
+  Per-turn audio is saved in `<out>.lines/`.
+
+Scripts are written for the ear: short lines, interjections, the punchline alone on its own beat, and at least 3 Claim Guy lines.
+A script without them is rejected *before* any TTS is spent (twice), then accepted.
+
+**TTS quota:** the Gemini free tier allows **10 TTS requests/day per model** (shared with every other project on the key;
+2.5-pro-tts is 0). That covers a Short needing 2 requests (batch) up to ~5 (per turn), so 6 Shorts/day needs **Gemini
+billing enabled** on the key (paid tier, about cents per Short).
 
 ## Switch-on checklist (needs Beatrice)
 1. Google Cloud project (any, under lhymite36@gmail.com) -> enable **YouTube Data API v3**.
