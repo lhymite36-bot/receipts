@@ -885,7 +885,14 @@
   const PREVIEW_TEXT = 'People say you only use ten percent of your brain. Here is the receipt.';
   // Second voice for dialogue scripts (Brain vs Me etc.). 'auto' = a contrasting voice, 'off' = one voice for everything.
   const voice2Pref = () => { const v = load('rcp.ttsVoice2', 'auto'); return v === 'off' || v === 'auto' || G.TTS_VOICES.some(([n]) => n === v) ? v : 'auto'; };
-  function voice2For(a) { const v = voice2Pref(); if (v === 'off') return ''; if (v !== 'auto') return v === a ? (a === 'Puck' ? 'Kore' : 'Puck') : v; return a === 'Puck' ? 'Kore' : 'Puck'; }
+  function voice2For(a, other) { const v = voice2Pref(); if (v === 'off') return ''; if (v !== 'auto') return v === a ? (a === 'Puck' ? 'Kore' : 'Puck') : v; if (other === 'Claim Guy') return a === 'Fenrir' ? 'Puck' : 'Fenrir'; return a === 'Puck' ? 'Kore' : 'Puck'; }
+  // Receipts cast voices (Gemini TTS per-turn style metadata). Overridable via rcp.ttsStyleSkeptic / rcp.ttsStyleClaim.
+  const CAST_STYLE = {
+    skeptic: 'Deadpan, dry, sarcastic skeptic with perfect comic timing: crisp and punchy, quick on the setups, then slower and bone-dry on punchlines; tiny pauses before every reveal; leans hard on key words; an unimpressed, amused smirk in the voice. Expressive and alive, never monotone, never robotic.',
+    claim: 'Overconfident hype-bro influencer: loud, fast, theatrical and completely sure of himself; big emphasis, rising excitement, a cocky chuckle in the voice; sells the myth like a late-night infomercial. Never calm.',
+    punch: ' Take a clear beat of silence before this line, then land it slower and drier, stressing the final word.',
+  };
+  const castStyle = (k) => String(load(k === 'claim' ? 'rcp.ttsStyleClaim' : 'rcp.ttsStyleSkeptic', '') || '').trim() || CAST_STYLE[k];
   const SPK_LABEL = { brain: 'Claim Guy', friend: 'Friend', boss: 'Boss', crush: 'Crush', mom: 'Mom', cat: 'Cat' };
   // Build "Me:/Brain:" lines from the beats when the script is a two-character dialogue; null otherwise.
   function dialogueLines(pkg) {
@@ -893,7 +900,7 @@
     const other = pkg.beats.map((b) => String(b.speaker || '').toLowerCase()).find((k) => SPK_LABEL[k]); if (!other) return null;
     const lines = [];
     pkg.beats.forEach((b) => { const k = String(b.speaker || '').toLowerCase(); const who = SPK_LABEL[k] ? SPK_LABEL[other] : 'Me'; const t = String(b.text || '').trim(); if (!t) return;
-      if (lines.length && lines[lines.length - 1].speaker === who) lines[lines.length - 1].text += ' ' + t; else lines.push({ speaker: who, text: t }); });
+      if (lines.length && lines[lines.length - 1].speaker === who) { lines[lines.length - 1].text += ' ' + t; if (b.punch) lines[lines.length - 1].punch = true; } else lines.push({ speaker: who, text: t, punch: !!b.punch }); });
     const n = { Me: 0 }; lines.forEach((l) => { n[l.speaker] = (n[l.speaker] || 0) + 1; });
     if (Object.keys(n).length < 2 || !n.Me || lines.length < 3) return null;
     const joined = S.wordCount(lines.map((l) => l.text).join(' ')); if (joined < S.wordCount(pkg.script) * 0.85) return null;
@@ -975,13 +982,20 @@
         setStatus('voice-status', 'AI voice ready (' + voice + ', ' + r.model + ', ' + parts.length + ' parts, ' + fmt(P.voice.duration) + ').', 'ok');
         return;
       }
-      const dlg = dialogueLines(P.pkg); const v2 = dlg ? voice2For(voice) : '';
+      const dlg = dialogueLines(P.pkg); const v2 = dlg ? voice2For(voice, dlg.other) : '';
       const onProgress = (i, n) => { label.textContent = n > 1 ? 'Generating part ' + (i + 1) + ' / ' + n + '…' : 'Generating…'; };
       let r = null; let note = '';
       if (dlg && v2) {
         try {
           setStatus('voice-status', 'Creating a two-voice dialogue: ' + voice + ' (Me) + ' + v2 + ' (' + dlg.other + ')… (about 10–40 s)', 'live');
-          const dOpts = { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, onProgress, timeout: 60000 };
+          let dOpts = { speakers: [{ speaker: 'Me', voice, style: st.style }, { speaker: dlg.other, voice: v2, style: dlg.other === 'Brain' ? 'smug, mischievous and dramatic, a little faster, playful' : 'natural and expressive, conversational' }], style: st.style, onProgress, timeout: 60000 };
+          if (dlg.other === 'Claim Guy') {
+            // Receipts cast: deadpan Skeptic (narrator + me) vs overconfident Claim Guy; punchlines get a pause-then-dry-landing style.
+            const sk = castStyle('skeptic'); const cg = castStyle('claim');
+            // Speaker ids must be single words: Gemini TTS fails to map names with spaces ("Claim Guy") to their voice.
+            dlg.lines = dlg.lines.map((l) => { const who = l.speaker === 'Me' ? 'Skeptic' : 'Chad'; const base = who === 'Skeptic' ? sk : cg; return { speaker: who, text: l.text, style: l.punch ? base + CAST_STYLE.punch : base }; });
+            dOpts = { speakers: [{ speaker: 'Skeptic', voice, style: sk }, { speaker: 'Chad', voice: v2, style: cg }], style: sk, onProgress, timeout: 120000 };
+          }
           try { r = await G.generateDialogueSpeech(dlg.lines, dOpts); } catch (e1) {
             if (e1 && (e1.quota || e1.status === 429 || e1.status === 400)) throw e1;
             setStatus('voice-status', 'Two-voice request hiccup — trying once more…', 'live'); r = await G.generateDialogueSpeech(dlg.lines, dOpts);

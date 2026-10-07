@@ -16,11 +16,11 @@ function serve() {
 (async () => {
   const pk0 = JSON.parse(fs.readFileSync(PKG, 'utf8')); const pkg = pk0.pkg || pk0;
   const srv = await serve(); const ORIGIN = 'http://127.0.0.1:' + srv.address().port;
-  const browser = await puppeteer.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: 'new', protocolTimeout: 0,
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome', headless: 'new', protocolTimeout: Number(process.env.PROTOCOL_TIMEOUT || 300000), // a hung draw batch fails (and the caller retries) instead of waiting forever
     args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-background-timer-throttling'] });
   const page = await browser.newPage(); const errors = []; page.on('pageerror', (e) => errors.push(String(e))); page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   await page.goto(ORIGIN + '/'); await page.waitForFunction(() => window.VTS && window.VTS.render && window.VTS.motion && window.VTS.three3d);
-  const LOOKX = process.env.LOOK_JSON ? JSON.parse(process.env.LOOK_JSON) : {}; if (LOOKX.handle === undefined) LOOKX.handle = process.env.HANDLE || 'Quiet Brain'; if (process.env.CAPTION_STYLE) LOOKX.captionStyle = process.env.CAPTION_STYLE; if (process.env.TEXT_STYLE) LOOKX.textStyle = process.env.TEXT_STYLE;
+  const LOOKX = process.env.LOOK_JSON ? JSON.parse(process.env.LOOK_JSON) : {}; if (LOOKX.handle === undefined) LOOKX.handle = process.env.HANDLE || ''; if (process.env.CAPTION_STYLE) LOOKX.captionStyle = process.env.CAPTION_STYLE; if (process.env.TEXT_STYLE) LOOKX.textStyle = process.env.TEXT_STYLE;
   const info = await page.evaluate(async (pkg, aspect, anim, motion, maxs, lookx) => {
     const R = window.VTS.render; const buf0 = await R.decodeBlob(await (await fetch('/__audio.wav')).blob());
     let buf = buf0; if (maxs && buf0.duration > maxs) { const ac = R.audioCtx(); const n = Math.floor(maxs * buf0.sampleRate); buf = ac.createBuffer(1, n, buf0.sampleRate); buf.copyToChannel(buf0.getChannelData(0).subarray(0, n), 0); }

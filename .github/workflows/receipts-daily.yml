@@ -1,0 +1,60 @@
+# Receipts daily Shorts -> YouTube (direct upload, no Buffer).
+# DISABLED until YouTube credentials exist: the schedule below is commented out, the job also requires the repo variable
+# RECEIPTS_PIPELINE_ENABLED=true, and the workflow itself was disabled with `gh workflow disable receipts-daily.yml`.
+# To switch on: add secrets GEMINI_API_KEY, RECEIPTS_YT_CLIENT_ID, RECEIPTS_YT_CLIENT_SECRET, RECEIPTS_YT_REFRESH_TOKEN,
+# set variable RECEIPTS_PIPELINE_ENABLED=true, `gh workflow enable receipts-daily.yml`, then uncomment `schedule`.
+name: Receipts daily Shorts
+on:
+  workflow_dispatch:
+    inputs:
+      day: { description: 'Day to publish (YYYY-MM-DD, IST). Empty = today (IST)', required: false, default: '' }
+      count: { description: 'Number of Shorts (max 6)', required: false, default: '6' }
+      privacy: { description: 'scheduled | public | unlisted | private', required: false, default: 'scheduled' }
+      dry_run: { description: 'Render only, do not upload', type: boolean, required: false, default: false }
+  # schedule:
+  #   - cron: '0 22 * * *'   # 03:30 IST: renders 6 Shorts (~70-90 min), uploads them with publishAt 08:00/11:00/14:00/17:00/20:00/23:00 IST
+concurrency: { group: receipts-daily, cancel-in-progress: false }
+permissions: { contents: write }
+jobs:
+  daily:
+    if: vars.RECEIPTS_PIPELINE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      RECEIPTS_YT_CLIENT_ID: ${{ secrets.RECEIPTS_YT_CLIENT_ID }}
+      RECEIPTS_YT_CLIENT_SECRET: ${{ secrets.RECEIPTS_YT_CLIENT_SECRET }}
+      RECEIPTS_YT_REFRESH_TOKEN: ${{ secrets.RECEIPTS_YT_REFRESH_TOKEN }}
+      OUT_ROOT: /tmp/receipts-days
+      CHROME: /usr/bin/google-chrome
+      COUNT: ${{ inputs.count || '6' }}
+      PRIVACY: ${{ inputs.privacy || 'scheduled' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Tools
+        run: |
+          which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
+          npm install --no-save --no-audit --no-fund puppeteer-core@23.11.1
+      - name: Pick day
+        run: echo "DAY=${{ inputs.day }}" >> $GITHUB_ENV && [ -n "${{ inputs.day }}" ] || echo "DAY=$(TZ=Asia/Kolkata date +%F)" >> $GITHUB_ENV
+      - name: Render
+        run: bash pipeline/render-day.sh "$DAY"
+      - name: Save topic state (no repeats)
+        if: always()
+        run: |
+          git config user.name "receipts-pipeline"; git config user.email "receipts-pipeline@users.noreply.github.com"
+          git add pipeline/state/used.json && git commit -m "pipeline: topics used for $DAY [skip ci]" && git push || echo "state unchanged"
+      - name: Upload to YouTube
+        if: ${{ !inputs.dry_run }}
+        run: node pipeline/yt-upload.js "$OUT_ROOT/$DAY"
+      - name: Dry-run upload preview
+        if: ${{ inputs.dry_run }}
+        run: node pipeline/yt-upload.js "$OUT_ROOT/$DAY" --dry-run
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receipts-${{ env.DAY }}
+          path: /tmp/receipts-days/${{ env.DAY }}/*
+          retention-days: 5

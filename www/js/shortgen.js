@@ -46,6 +46,8 @@
     'Loop: the last line should flow back into the first line so a rewatch feels seamless.',
     'CTA: comment-bait ("which claim should I stamp next?", "send this to the friend who still believes this", "receipt or myth — comment below"). Never beg for likes.',
     'Spoken text is what the AI voice reads: no emoji, no hashtags, no stage directions, no speaker labels inside "script" or beat text.',
+    'Write for the EAR (it is performed by expressive AI voices): one idea per beat, mostly 3-12 words; contractions; vary the rhythm (a quick run of short lines, then a one- or two-word beat like "Cute." / "Wrong." / "Buddy."); use 2-3 interjections ("Oh no.", "Wait.", "Sir.", "Okay, so…", "Yeah, no."); set up, then put the punchline alone in its own beat (punch true). Never split a sentence or a phrase across beats.',
+    'Claim Guy: when he is in the cast give him at least 3 short, loud, overconfident lines ("Trust me, bro.", "I saw it on a poster!", "Science says so. Probably.") that the Skeptic flattens with a dry receipt.',
   ].join('\n');
 
   const SYSTEM = [
@@ -370,7 +372,7 @@
     if (beats.length < 3) beats = beatsFromScript(script, hooks[0], beats);
     else beats = completeBeats(script, beats);
     attachScenes(beats);
-    const tagList = (v) => Array.from(new Set((Array.isArray(v) ? v : String(v || '').split(/[\s,]+/)).map(normHashtag).filter(Boolean)));
+    const tagList = (v) => Array.from(new Set((Array.isArray(v) ? v : [v]).flatMap((x) => String(x || '').split(/[\s,]+|(?=#)/)).map(normHashtag).filter(Boolean))); // models sometimes pack several tags into one item
     const hashtags = tagList(obj.hashtags).slice(0, 8);
     if (!hashtags.some((h) => h.toLowerCase() === '#shorts') && hashtags.length < 8) hashtags.push('#Shorts');
     const tiktokHashtags = tagList(obj.tiktokHashtags).filter((h) => h.toLowerCase() !== '#shorts').slice(0, 5);

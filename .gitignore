@@ -7,3 +7,6 @@ tests/out/
 .DS_Store
 .env
 *.pem
+youtube-client.json
+*refresh-token*
+client_secret*.json

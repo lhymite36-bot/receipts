@@ -1,0 +1,795 @@
+{
+ "formats": [
+  "skeptic-vs-claim",
+  "people-say",
+  "got-receipts",
+  "pov",
+  "nobody-me",
+  "expectation"
+ ],
+ "myths": [
+  {
+   "id": "goldfish-memory",
+   "claim": "Goldfish have a 3-second memory",
+   "receipt": "Lab goldfish have been trained to push levers for food and respond to feeding sounds, and they remember those tricks for months, not seconds.",
+   "tags": [
+    "goldfish",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "ten-percent-brain",
+   "claim": "We only use 10% of our brain",
+   "receipt": "Brain scans show activity across virtually every region over a day, and damage to almost any area causes problems. There is no idle 90%.",
+   "tags": [
+    "brain",
+    "science myths"
+   ]
+  },
+  {
+   "id": "great-wall-space",
+   "claim": "The Great Wall of China is visible from space with the naked eye",
+   "receipt": "It is only a few metres wide and the same colour as the land around it. Astronauts, including China's first astronaut Yang Liwei, said they couldn't see it.",
+   "tags": [
+    "great wall",
+    "space"
+   ]
+  },
+  {
+   "id": "bulls-red",
+   "claim": "Bulls hate the colour red",
+   "receipt": "Bulls are red-green colour blind. They charge at the cape because it moves, not because it is red.",
+   "tags": [
+    "bulls",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "lightning-twice",
+   "claim": "Lightning never strikes the same place twice",
+   "receipt": "The Empire State Building gets hit around 20 to 25 times a year. Tall pointy things get struck again and again.",
+   "tags": [
+    "lightning",
+    "weather"
+   ]
+  },
+  {
+   "id": "hair-nails-death",
+   "claim": "Hair and nails keep growing after you die",
+   "receipt": "The skin dries out and pulls back after death, which makes hair and nails look longer. Nothing is actually growing.",
+   "tags": [
+    "biology",
+    "science myths"
+   ]
+  },
+  {
+   "id": "knuckle-arthritis",
+   "claim": "Cracking your knuckles gives you arthritis",
+   "receipt": "Dr Donald Unger cracked the knuckles on only one hand for over 60 years and found no arthritis difference between his hands. He won an Ig Nobel Prize for it. Studies agree: no link found.",
+   "tags": [
+    "knuckles",
+    "body myths"
+   ]
+  },
+  {
+   "id": "bats-blind",
+   "claim": "Bats are blind",
+   "receipt": "No bat species is blind. Many see well, and lots of them use echolocation on top of their eyesight.",
+   "tags": [
+    "bats",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "napoleon-short",
+   "claim": "Napoleon was super short",
+   "receipt": "He was about 1.69 metres, around 5 foot 7, average or a bit above for a Frenchman of his time. The myth comes from old French inches and British cartoon propaganda.",
+   "tags": [
+    "napoleon",
+    "history myths"
+   ]
+  },
+  {
+   "id": "viking-horns",
+   "claim": "Vikings wore horned helmets",
+   "receipt": "There is no evidence Viking warriors wore horned helmets. The look was popularised by costume designs for Wagner's opera in 1876.",
+   "tags": [
+    "vikings",
+    "history myths"
+   ]
+  },
+  {
+   "id": "carrots-night-vision",
+   "claim": "Carrots give you night vision",
+   "receipt": "During World War Two the British spread this story to hide that their pilots were using radar. Vitamin A helps normal eyesight, but extra carrots won't give you night vision.",
+   "tags": [
+    "carrots",
+    "ww2"
+   ]
+  },
+  {
+   "id": "sugar-hyper",
+   "claim": "Sugar makes kids hyperactive",
+   "receipt": "Double-blind studies found no difference in behaviour between kids given sugar and kids given a placebo. Parents who believed their kid had sugar rated them as more hyper anyway.",
+   "tags": [
+    "sugar",
+    "food myths"
+   ]
+  },
+  {
+   "id": "shaving-thicker",
+   "claim": "Shaving makes hair grow back thicker",
+   "receipt": "Shaving cuts hair at a blunt angle so the stubble feels coarse, but studies going back to 1928 show it doesn't change thickness, colour or growth rate.",
+   "tags": [
+    "shaving",
+    "body myths"
+   ]
+  },
+  {
+   "id": "spiders-sleep",
+   "claim": "You swallow 8 spiders a year in your sleep",
+   "receipt": "There is no study behind that number. A sleeping human is a noisy, breathing, vibrating giant, which spiders avoid.",
+   "tags": [
+    "spiders",
+    "internet myths"
+   ]
+  },
+  {
+   "id": "chameleon-camouflage",
+   "claim": "Chameleons change colour to blend in",
+   "receipt": "They mostly change colour to signal mood and to control temperature, by rearranging tiny crystals in their skin.",
+   "tags": [
+    "chameleon",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "ostrich-sand",
+   "claim": "Ostriches bury their heads in the sand",
+   "receipt": "They don't. They lower their heads to turn their eggs in ground nests, or lie flat to hide, which from far away looks like a buried head.",
+   "tags": [
+    "ostrich",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "baby-bird-touch",
+   "claim": "If you touch a baby bird its mother will reject it",
+   "receipt": "Most birds have a weak sense of smell and don't abandon chicks because a human touched them. Still, best to leave wildlife alone.",
+   "tags": [
+    "birds",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "tongue-map",
+   "claim": "Different parts of your tongue taste different flavours",
+   "receipt": "Every taste zone can detect every basic taste. The famous tongue map came from a misread translation of a 1901 German paper.",
+   "tags": [
+    "tongue map",
+    "science myths"
+   ]
+  },
+  {
+   "id": "dogs-black-white",
+   "claim": "Dogs only see in black and white",
+   "receipt": "Dogs see colour, just fewer of them. They have two types of colour cones and mostly see blues and yellows.",
+   "tags": [
+    "dogs",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "five-senses",
+   "claim": "Humans only have five senses",
+   "receipt": "You also have balance, a sense of where your body is, temperature, pain and more. Scientists count way more than five.",
+   "tags": [
+    "senses",
+    "science myths"
+   ]
+  },
+  {
+   "id": "blue-blood",
+   "claim": "Your blood is blue until it touches air",
+   "receipt": "Blood is always red: darker red in veins, brighter in arteries. Veins look blue because of how light passes through skin.",
+   "tags": [
+    "blood",
+    "body myths"
+   ]
+  },
+  {
+   "id": "penny-skyscraper",
+   "claim": "A penny dropped from a skyscraper can kill someone",
+   "receipt": "A penny is flat and light, so air resistance caps its speed at roughly 40 to 80 km per hour. It would sting, not kill.",
+   "tags": [
+    "physics",
+    "urban legends"
+   ]
+  },
+  {
+   "id": "everest-tallest",
+   "claim": "Mount Everest is the tallest mountain on Earth",
+   "receipt": "Everest has the highest peak above sea level. Measured from base to peak, Mauna Kea in Hawaii is taller, over 10,000 metres, most of it underwater.",
+   "tags": [
+    "everest",
+    "geography"
+   ]
+  },
+  {
+   "id": "five-second-rule",
+   "claim": "Food on the floor is fine if you grab it within 5 seconds",
+   "receipt": "A Rutgers study found bacteria can transfer to food in under one second. Wet food picks up more, faster.",
+   "tags": [
+    "five second rule",
+    "food myths"
+   ]
+  },
+  {
+   "id": "alcohol-warm",
+   "claim": "Alcohol warms you up when it's cold",
+   "receipt": "Alcohol widens blood vessels near your skin, so you feel warm while your core actually loses heat faster.",
+   "tags": [
+    "alcohol",
+    "body myths"
+   ]
+  },
+  {
+   "id": "swim-after-eating",
+   "claim": "You must wait 30 minutes after eating to swim",
+   "receipt": "There's no evidence that swimming after a meal causes dangerous cramps or drowning. Safety groups have found no documented cases.",
+   "tags": [
+    "swimming",
+    "body myths"
+   ]
+  },
+  {
+   "id": "medieval-flat-earth",
+   "claim": "People in the Middle Ages thought the Earth was flat",
+   "receipt": "Educated Europeans knew the Earth was round. The ancient Greek Eratosthenes even estimated its size around 240 BC. The myth was popularised in the 1800s.",
+   "tags": [
+    "flat earth",
+    "history myths"
+   ]
+  },
+  {
+   "id": "einstein-math",
+   "claim": "Einstein failed maths at school",
+   "receipt": "Einstein was excellent at maths and had taught himself calculus by about 15. The myth likely came from a misread Swiss grading scale.",
+   "tags": [
+    "einstein",
+    "history myths"
+   ]
+  },
+  {
+   "id": "seasons-distance",
+   "claim": "Summer happens because Earth is closer to the Sun",
+   "receipt": "Seasons come from Earth's tilt of about 23.4 degrees. Earth is actually closest to the Sun in early January, during northern winter.",
+   "tags": [
+    "seasons",
+    "space"
+   ]
+  },
+  {
+   "id": "no-gravity-space",
+   "claim": "There's no gravity in space",
+   "receipt": "On the International Space Station gravity is still about 90 percent as strong as on the ground. Astronauts float because they are constantly falling around the Earth.",
+   "tags": [
+    "gravity",
+    "space"
+   ]
+  },
+  {
+   "id": "microwave-radioactive",
+   "claim": "Microwaves make your food radioactive",
+   "receipt": "Microwaves use non-ionising radiation that just makes water molecules jiggle and heat up. Food does not become radioactive.",
+   "tags": [
+    "microwave",
+    "science myths"
+   ]
+  },
+  {
+   "id": "head-heat",
+   "claim": "You lose most of your body heat through your head",
+   "receipt": "Your head loses heat roughly in proportion to its surface area, around 10 percent. The myth traces back to an old military test where only the head was uncovered.",
+   "tags": [
+    "body heat",
+    "body myths"
+   ]
+  },
+  {
+   "id": "glass-liquid",
+   "claim": "Glass is a slow-moving liquid",
+   "receipt": "Glass is an amorphous solid. Old windows are thicker at the bottom because of how they were made and installed, not because they flowed.",
+   "tags": [
+    "glass",
+    "science myths"
+   ]
+  },
+  {
+   "id": "sharks-cancer",
+   "claim": "Sharks don't get cancer",
+   "receipt": "Sharks do get cancer; tumours have been documented in many species. The myth was pushed to sell shark cartilage pills.",
+   "tags": [
+    "sharks",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "camel-hump-water",
+   "claim": "Camels store water in their humps",
+   "receipt": "Camel humps store fat, not water. The fat is an energy reserve for long trips.",
+   "tags": [
+    "camels",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "mice-cheese",
+   "claim": "Mice love cheese",
+   "receipt": "Mice prefer sweet foods and grains. If you're setting a trap, peanut butter beats cheese.",
+   "tags": [
+    "mice",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "lemmings-suicide",
+   "claim": "Lemmings jump off cliffs in mass suicide",
+   "receipt": "They don't. The myth was cemented by a 1958 Disney documentary where filmmakers herded lemmings off a cliff themselves.",
+   "tags": [
+    "lemmings",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "edison-bulb",
+   "claim": "Thomas Edison invented the light bulb",
+   "receipt": "Incandescent lamps existed for decades before Edison. He made a practical long-lasting bulb and a system to power it, while Joseph Swan was working on the same thing in England.",
+   "tags": [
+    "edison",
+    "history myths"
+   ]
+  },
+  {
+   "id": "humans-chimps",
+   "claim": "Humans evolved from chimpanzees",
+   "receipt": "Humans and chimps share a common ancestor that lived roughly 6 to 7 million years ago. Chimps are cousins, not grandparents.",
+   "tags": [
+    "evolution",
+    "science myths"
+   ]
+  },
+  {
+   "id": "fortune-cookies",
+   "claim": "Fortune cookies are a Chinese tradition",
+   "receipt": "Fortune cookies were popularised in California in the early 1900s, most likely by Japanese immigrants. They're rare in China.",
+   "tags": [
+    "fortune cookies",
+    "food myths"
+   ]
+  },
+  {
+   "id": "let-them-eat-cake",
+   "claim": "Marie Antoinette said 'let them eat cake'",
+   "receipt": "There's no evidence she said it. Rousseau wrote the line about 'a great princess' when Marie Antoinette was still a child in Austria.",
+   "tags": [
+    "marie antoinette",
+    "history myths"
+   ]
+  },
+  {
+   "id": "coriolis-sink",
+   "claim": "Toilets flush the other way in the southern hemisphere",
+   "receipt": "The Coriolis effect is far too weak to steer a sink or toilet. The shape of the bowl and how the water enters decide the spin.",
+   "tags": [
+    "coriolis",
+    "physics"
+   ]
+  },
+  {
+   "id": "credit-card-balance",
+   "claim": "Carrying a credit card balance boosts your credit score",
+   "receipt": "Paying your full balance every month is just as good for your score, and you skip the interest. Carrying a balance only costs you money.",
+   "tags": [
+    "credit score",
+    "money myths"
+   ]
+  },
+  {
+   "id": "check-credit-score",
+   "claim": "Checking your own credit score lowers it",
+   "receipt": "Checking your own score is a soft inquiry and does not affect it. Only hard inquiries, like applying for credit, can.",
+   "tags": [
+    "credit score",
+    "money myths"
+   ]
+  },
+  {
+   "id": "tax-bracket",
+   "claim": "Moving into a higher tax bracket means all your income gets taxed more",
+   "receipt": "Income tax is marginal: only the money above each threshold is taxed at the higher rate. A raise can't make you take home less from income tax alone.",
+   "tags": [
+    "taxes",
+    "money myths"
+   ]
+  },
+  {
+   "id": "need-money-invest",
+   "claim": "You need a lot of money to start investing",
+   "receipt": "Many brokers offer fractional shares and index funds with tiny minimums. Time in the market matters more than starting big.",
+   "tags": [
+    "investing",
+    "money myths"
+   ]
+  },
+  {
+   "id": "paper-money",
+   "claim": "Paper money is made of paper",
+   "receipt": "US dollar bills are about 75 percent cotton and 25 percent linen, and many countries now use plastic polymer notes.",
+   "tags": [
+    "money",
+    "fun facts"
+   ]
+  },
+  {
+   "id": "incognito-anonymous",
+   "claim": "Incognito mode makes you anonymous online",
+   "receipt": "Incognito only stops your browser saving history on your device. Websites, your internet provider and your employer's network can still see what you do.",
+   "tags": [
+    "incognito",
+    "tech myths"
+   ]
+  },
+  {
+   "id": "macs-viruses",
+   "claim": "Macs can't get viruses",
+   "receipt": "Macs can get malware. In 2012 the Flashback trojan infected over 600,000 Macs.",
+   "tags": [
+    "mac",
+    "tech myths"
+   ]
+  },
+  {
+   "id": "megapixels",
+   "claim": "More megapixels means better photos",
+   "receipt": "Sensor size, lens quality and image processing matter more. A big-megapixel tiny sensor can still take mushy photos.",
+   "tags": [
+    "cameras",
+    "tech myths"
+   ]
+  },
+  {
+   "id": "drain-battery",
+   "claim": "You should fully drain your phone battery before charging",
+   "receipt": "That was true for old nickel batteries. Modern lithium-ion batteries prefer partial charges, and deep drains wear them faster.",
+   "tags": [
+    "battery",
+    "tech myths"
+   ]
+  },
+  {
+   "id": "close-apps-battery",
+   "claim": "Closing background apps saves battery",
+   "receipt": "Apple and Google both say force-closing apps doesn't help and can even use more battery when the app has to restart from scratch.",
+   "tags": [
+    "battery",
+    "tech myths"
+   ]
+  },
+  {
+   "id": "ghz-faster",
+   "claim": "A higher GHz number always means a faster processor",
+   "receipt": "Clock speed is one factor. Architecture, core count and cache matter so much that a lower-GHz chip can easily be faster.",
+   "tags": [
+    "cpu",
+    "tech myths"
+   ]
+  },
+  {
+   "id": "vikings-america",
+   "claim": "Columbus was the first European to reach America",
+   "receipt": "Norse explorers led by Leif Erikson reached North America around the year 1000, nearly 500 years earlier. And millions of people already lived there.",
+   "tags": [
+    "columbus",
+    "history myths"
+   ]
+  },
+  {
+   "id": "pyramid-slaves",
+   "claim": "The pyramids were built by slaves",
+   "receipt": "Archaeologists found villages and tombs of paid, fed workers near Giza. Building the pyramids was organised labour, not slavery.",
+   "tags": [
+    "pyramids",
+    "history myths"
+   ]
+  },
+  {
+   "id": "salem-burned",
+   "claim": "Witches were burned at the stake in Salem",
+   "receipt": "Nobody was burned in Salem. Nineteen people were hanged and one man was crushed with stones.",
+   "tags": [
+    "salem",
+    "history myths"
+   ]
+  },
+  {
+   "id": "iron-maiden",
+   "claim": "The iron maiden was a medieval torture device",
+   "receipt": "There's no solid evidence iron maidens existed in the Middle Ages. Most known examples were assembled in the 1800s for museums and shows.",
+   "tags": [
+    "iron maiden",
+    "history myths"
+   ]
+  },
+  {
+   "id": "disney-frozen",
+   "claim": "Walt Disney was cryogenically frozen",
+   "receipt": "Walt Disney was cremated in 1966. The frozen-head story is pure urban legend.",
+   "tags": [
+    "walt disney",
+    "urban legends"
+   ]
+  },
+  {
+   "id": "tv-close-eyes",
+   "claim": "Sitting too close to the TV ruins your eyes",
+   "receipt": "There's no evidence it causes lasting damage. The myth took off after some 1960s TVs leaked radiation and were recalled; modern screens don't.",
+   "tags": [
+    "tv",
+    "body myths"
+   ]
+  },
+  {
+   "id": "gum-seven-years",
+   "claim": "Swallowed gum stays in your stomach for seven years",
+   "receipt": "Your body can't digest gum base, but it moves through and out like other indigestible stuff, usually within days.",
+   "tags": [
+    "gum",
+    "body myths"
+   ]
+  },
+  {
+   "id": "left-right-brain",
+   "claim": "People are either left-brained or right-brained",
+   "receipt": "A University of Utah study of over 1,000 brain scans found no evidence that people use one side of the brain more than the other.",
+   "tags": [
+    "brain",
+    "science myths"
+   ]
+  },
+  {
+   "id": "coffee-growth",
+   "claim": "Coffee stunts your growth",
+   "receipt": "There's no evidence coffee affects height. The idea was boosted by 1900s ads for a caffeine-free coffee substitute.",
+   "tags": [
+    "coffee",
+    "food myths"
+   ]
+  },
+  {
+   "id": "banana-tree",
+   "claim": "Bananas grow on trees",
+   "receipt": "The banana plant is a giant herb. Its 'trunk' is tightly rolled leaves, not wood.",
+   "tags": [
+    "bananas",
+    "food myths"
+   ]
+  },
+  {
+   "id": "strawberry-berry",
+   "claim": "Strawberries are berries",
+   "receipt": "Botanically, strawberries aren't berries, but bananas, grapes and even avocados are.",
+   "tags": [
+    "berries",
+    "food myths"
+   ]
+  },
+  {
+   "id": "peanut-nut",
+   "claim": "Peanuts are nuts",
+   "receipt": "Peanuts are legumes, like beans and lentils. They grow underground in pods.",
+   "tags": [
+    "peanuts",
+    "food myths"
+   ]
+  },
+  {
+   "id": "diamonds-coal",
+   "claim": "Diamonds are made from coal",
+   "receipt": "Most diamonds formed deep in the mantle, over 150 km down, often before land plants, the source of coal, even existed.",
+   "tags": [
+    "diamonds",
+    "geology"
+   ]
+  },
+  {
+   "id": "sun-yellow",
+   "claim": "The Sun is yellow",
+   "receipt": "Sunlight is basically white. It looks yellow from the ground because the atmosphere scatters blue light.",
+   "tags": [
+    "sun",
+    "space"
+   ]
+  },
+  {
+   "id": "mercury-hottest",
+   "claim": "Mercury is the hottest planet because it's closest to the Sun",
+   "receipt": "Venus is hotter, around 465 degrees Celsius, because its thick carbon dioxide atmosphere traps heat.",
+   "tags": [
+    "venus",
+    "space"
+   ]
+  },
+  {
+   "id": "black-hole-vacuum",
+   "claim": "Black holes suck everything in like cosmic vacuum cleaners",
+   "receipt": "From far away a black hole pulls like any object of the same mass. If the Sun became a black hole of equal mass, Earth's orbit wouldn't change.",
+   "tags": [
+    "black holes",
+    "space"
+   ]
+  },
+  {
+   "id": "nasa-pen",
+   "claim": "NASA spent millions on a space pen while Russia used a pencil",
+   "receipt": "The Fisher Space Pen was developed privately, and both NASA and the Soviets bought it. Pencils shed flammable graphite and broken tips in zero gravity.",
+   "tags": [
+    "nasa",
+    "space"
+   ]
+  },
+  {
+   "id": "dark-side-moon",
+   "claim": "The Moon has a permanent dark side",
+   "receipt": "The far side gets just as much sunlight. It's only hidden from us because the Moon is tidally locked.",
+   "tags": [
+    "moon",
+    "space"
+   ]
+  },
+  {
+   "id": "seashell-ocean",
+   "claim": "You can hear the ocean in a seashell",
+   "receipt": "You're hearing surrounding noise echoing inside the shell. A cup does the same trick.",
+   "tags": [
+    "seashell",
+    "science myths"
+   ]
+  },
+  {
+   "id": "owl-360",
+   "claim": "Owls can turn their heads all the way around",
+   "receipt": "Owls can rotate their heads about 270 degrees, thanks to extra neck bones and special blood vessels. Not 360.",
+   "tags": [
+    "owls",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "porcupine-quills",
+   "claim": "Porcupines shoot their quills",
+   "receipt": "They can't shoot them. The quills detach easily when something touches them.",
+   "tags": [
+    "porcupine",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "worm-two",
+   "claim": "Cut an earthworm in half and you get two worms",
+   "receipt": "Usually you just get one injured worm or none. Some species can regrow a lost tail end, not a whole new worm.",
+   "tags": [
+    "earthworms",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "dog-years",
+   "claim": "One dog year equals seven human years",
+   "receipt": "Dogs age fast early on. Vets estimate a dog's first year is roughly 15 human years, the second about 9, then around 4 to 5 per year.",
+   "tags": [
+    "dogs",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "fly-24h",
+   "claim": "House flies only live 24 hours",
+   "receipt": "House flies usually live around two to four weeks. The one-day thing is closer to adult mayflies.",
+   "tags": [
+    "flies",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "hippo-pink-milk",
+   "claim": "Hippo milk is pink",
+   "receipt": "Hippo milk isn't pink. The myth mixed up hippos' reddish skin secretion, sometimes called blood sweat, with their milk.",
+   "tags": [
+    "hippos",
+    "internet myths"
+   ]
+  },
+  {
+   "id": "koala-bear",
+   "claim": "Koalas are bears",
+   "receipt": "Koalas are marsupials. They carry their babies in a pouch, like kangaroos.",
+   "tags": [
+    "koalas",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "orca-whale",
+   "claim": "Killer whales are whales",
+   "receipt": "Orcas are the largest members of the dolphin family.",
+   "tags": [
+    "orcas",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "shark-swim-die",
+   "claim": "All sharks die if they stop swimming",
+   "receipt": "Some sharks need to keep moving to breathe, but many, like nurse sharks, can pump water over their gills while resting.",
+   "tags": [
+    "sharks",
+    "animal myths"
+   ]
+  },
+  {
+   "id": "bacteria-10x",
+   "claim": "You have ten times more bacteria cells than human cells",
+   "receipt": "A 2016 study revised that to roughly one to one. The ten-to-one number came from a rough 1970s estimate.",
+   "tags": [
+    "bacteria",
+    "science myths"
+   ]
+  },
+  {
+   "id": "sahara-largest",
+   "claim": "The Sahara is the largest desert",
+   "receipt": "Antarctica is the largest desert. A desert is defined by low precipitation, not heat.",
+   "tags": [
+    "deserts",
+    "geography"
+   ]
+  },
+  {
+   "id": "car-tires-lightning",
+   "claim": "Rubber tyres protect you from lightning in a car",
+   "receipt": "It's the car's metal body that protects you, by carrying the current around you. A few centimetres of rubber won't stop lightning.",
+   "tags": [
+    "lightning",
+    "physics"
+   ]
+  },
+  {
+   "id": "gold-always-up",
+   "claim": "Gold always goes up in value",
+   "receipt": "Gold peaked around 850 dollars an ounce in 1980 and didn't get back there in nominal terms until 2008. It can drop for decades.",
+   "tags": [
+    "gold",
+    "money myths"
+   ]
+  },
+  {
+   "id": "reading-dim-light",
+   "claim": "Reading in dim light ruins your eyesight",
+   "receipt": "It can tire your eyes for a while, but eye doctors say it doesn't cause permanent damage.",
+   "tags": [
+    "eyes",
+    "body myths"
+   ]
+  },
+  {
+   "id": "tomato-vegetable",
+   "claim": "Tomatoes are vegetables",
+   "receipt": "Botanically, tomatoes are fruit. In 1893 the US Supreme Court ruled them vegetables, for tax purposes.",
+   "tags": [
+    "tomatoes",
+    "food myths"
+   ]
+  }
+ ]
+}

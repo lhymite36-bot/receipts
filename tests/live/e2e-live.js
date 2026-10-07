@@ -1,5 +1,7 @@
 // LIVE end-to-end in headless Chrome with the real Gemini key from $GEMINI_API_KEY (never printed).
 // v1.4: env TONE (default sarcastic), FORMAT (default classic), HUMOUR (default 2).
+// Receipts: key stored as rcp.apiKey; env HANDLE (e.g. @ReceiptsDaily) sets rcp.handle; MOTION defaults to classic.
+// Voice env: TTS_VOICE (Skeptic/narrator), TTS_VOICE2 (Claim Guy), TTS_STYLE (single-voice custom style), TTS_STYLE_SKEPTIC / TTS_STYLE_CLAIM (dialogue styles).
 // idea -> Write my Short -> AI voice (Gemini TTS) -> render 9:16, then ffprobe. Usage: node tests/live/e2e-live.js <len> <outfile>
 const puppeteer = require('puppeteer-core'); const http = require('http'); const fs = require('fs'); const path = require('path'); const { execFileSync } = require('child_process');
 const WWW = path.join(__dirname, '..', '..', 'www'); const KEY = process.env.GEMINI_API_KEY; if (!KEY) throw new Error('no key');
@@ -25,7 +27,11 @@ function serve() {
   const app = (fn, ...a) => page.evaluate(fn, ...a);
   const click = async (sel) => { await page.$eval(sel, (e) => e.scrollIntoView({ block: 'center' })); await sleep(80); await page.click(sel); };
   await page.goto(ORIGIN + '/'); await page.waitForSelector('#idea');
-  await app((k) => { localStorage.setItem('vts.apiKey', k); }, KEY); await page.reload(); await page.waitForSelector('#idea');
+  await app((k, h, E) => { localStorage.setItem('rcp.apiKey', k); localStorage.setItem('vts.apiKey', k); if (h) localStorage.setItem('rcp.handle', JSON.stringify(h));
+    E = E || {}; const put = (k, v) => { if (v) localStorage.setItem(k, JSON.stringify(v)); };
+    put('rcp.ttsVoice', E.TTS_VOICE); put('rcp.ttsVoice2', E.TTS_VOICE2); put('rcp.ttsStyleSkeptic', E.TTS_STYLE_SKEPTIC); put('rcp.ttsStyleClaim', E.TTS_STYLE_CLAIM);
+    if (E.TTS_STYLE) { put('rcp.ttsStyle', 'custom'); put('rcp.ttsCustom', E.TTS_STYLE); } }, KEY, process.env.HANDLE || '',
+    { TTS_VOICE: process.env.TTS_VOICE || '', TTS_VOICE2: process.env.TTS_VOICE2 || '', TTS_STYLE: process.env.TTS_STYLE || '', TTS_STYLE_SKEPTIC: process.env.TTS_STYLE_SKEPTIC || '', TTS_STYLE_CLAIM: process.env.TTS_STYLE_CLAIM || '' }); await page.reload(); await page.waitForSelector('#idea');
   await page.type('#idea', IDEA); await page.select('#opt-length', LEN);
   await app((tone) => { const b = document.querySelector('#tone-seg [data-v="' + tone + '"]'); if (b) b.click(); }, process.env.TONE || 'sarcastic');
   await page.select('#opt-template', process.env.FORMAT || 'classic');
@@ -40,6 +46,9 @@ function serve() {
   const pkg = await app(() => { const p = window.VTS.app.project.pkg; return p && { textHook: p.textHook, cta: p.cta, tiktokCaption: p.tiktokCaption, tiktokHashtags: p.tiktokHashtags, ytHashtags: p.hashtags, speakers: p.beats.map((b) => b.speaker || '-').join(','), fx: p.beats.map((b) => b.fx || '-').join(','), stickers: p.beats.map((b) => b.sticker).filter(Boolean), words: window.VTS.shortgen.wordCount(p.script), beats: p.beats.length, title: p.title, hook: p.hooks[0], model: localStorage.getItem('vts.model'), low: p.beats.filter((b) => b.scene && window.VTS.scenes.matchScore(b.text, b.scene) < 0.5).length, poses: new Set(p.beats.map((b) => b.scene && b.scene.pose)).size, settings: new Set(p.beats.map((b) => b.scene && b.scene.setting)).size }; });
   console.log(t(), 'SCRIPT', JSON.stringify(pkg), '| gen-status:', red(await page.$eval('#gen-status', (e) => e.textContent)));
   if (!pkg) throw new Error('script failed');
+  // Receipts pipeline: MIN_CLAIM_LINES=N rejects a fresh script with fewer than N Claim Guy (speaker "brain") beats, before any TTS is spent.
+  const MINC = Number(process.env.MIN_CLAIM_LINES || 0); const nClaim = pkg.speakers.split(',').filter((x) => x === 'brain').length;
+  if (!PKGF && MINC && nClaim < MINC) { console.log(t(), 'REJECT_SCRIPT claim lines', nClaim, '<', MINC); await browser.close(); srv.close(); process.exit(3); }
   fs.writeFileSync(OUTF + '.pkg.json', JSON.stringify(await app(() => window.VTS.app.project.pkg), null, 1));
   // Resume: <out>.voice.wav from an interrupted run is reused (no TTS call); a fresh AI voice is saved there right away.
   const VOICEF = OUTF + '.voice.wav'; let voice;
@@ -54,7 +63,7 @@ function serve() {
   if (voice.src !== 'gemini') throw new Error('voice failed');
     console.log(t(), 'VOICE_SAVED', await exportVoice());
   }
-  if (voice.src !== 'cached') {await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300); await click('#anim-seg button[data-v="' + (process.env.ANIM || '2d') + '"]'); await sleep(200); if ((process.env.ANIM || '2d') === '2d') { await click('#motion-seg button[data-v="' + (process.env.MOTION || 'smooth') + '"]'); await sleep(200); } console.log('ANIM', process.env.ANIM || '2d', 'MOTION', process.env.MOTION || 'smooth'); }
+  if (voice.src !== 'cached') {await click('.step[data-step=render]'); await sleep(800); await click('#aspect-seg button[data-v="9:16"]'); await sleep(300); await click('#anim-seg button[data-v="' + (process.env.ANIM || '2d') + '"]'); await sleep(200); if ((process.env.ANIM || '2d') === '2d') { await click('#motion-seg button[data-v="' + (process.env.MOTION || 'classic') + '"]'); await sleep(200); } console.log('ANIM', process.env.ANIM || '2d', 'MOTION', process.env.MOTION || 'classic'); }
   // v1.5: ANIM=3d on the box renders frame-exact through tests/live/preview-offline.js (same app renderer + mixer),
   // because software WebGL here is far below real time; RENDER_MODE=app forces the in-app real-time recorder.
   const OFFLINE = (process.env.RENDER_MODE || 'offline') === 'offline';
@@ -64,7 +73,7 @@ function serve() {
     const fullLook = await app(() => Object.assign({}, window.VTS.app.project.look, { textHook: window.VTS.app.project.pkg.textHook || '', ctaSticker: window.VTS.app.project.pkg.cta || '' }));
     look = { cap: fullLook.captionStyle, intensity: fullLook.intensity, music: fullLook.music, sfx: fullLook.sfx, loop: fullLook.loop, progress: fullLook.progress };
     file = OUTF + '.mp4'; const t0 = Date.now();
-    const outp = execFileSync('node', [path.join(__dirname, 'preview-offline.js'), OUTF + '.pkg.json', voiceFile, file, '9:16', process.env.ANIM || '2d', process.env.MOTION || 'smooth'], { env: Object.assign({}, process.env, { LOOK_JSON: JSON.stringify(fullLook) }), maxBuffer: 64 * 1024 * 1024 }).toString();
+    const outp = execFileSync('node', [path.join(__dirname, 'preview-offline.js'), OUTF + '.pkg.json', voiceFile, file, '9:16', process.env.ANIM || '2d', process.env.MOTION || 'classic'], { env: Object.assign({}, process.env, { LOOK_JSON: JSON.stringify(fullLook) }), maxBuffer: 64 * 1024 * 1024 }).toString();
     console.log(outp.trim().split('\n').map((l) => l.slice(0, 400)).join('\n'));
     if (!/DONE/.test(outp)) throw new Error('offline render failed');
     size = fs.statSync(file).size; v = { w: 1080, h: 1920, type: 'video/mp4', ms: Date.now() - t0, mode: 'offline-frame-exact', anim: process.env.ANIM || '2d' };

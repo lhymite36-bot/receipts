@@ -40,3 +40,7 @@ Android: `com.receipts.app` / app name **Receipts**. `npm run sync` then Gradle 
 ## Free stack
 
 Capacitor, canvas 2D, Gemini (your key), Montserrat (OFL), Kenney / CC SFX where attributed in `www/sfx/`.
+
+## Daily Shorts pipeline
+
+6 Shorts/day straight to YouTube (@ReceiptsDaily): see [`pipeline/README.md`](pipeline/README.md). Workflow **Receipts daily Shorts** is disabled until YouTube credentials exist.

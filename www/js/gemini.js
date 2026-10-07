@@ -370,10 +370,12 @@
     if (multi && structured && Array.isArray(o.lines) && o.lines.length) {
       // 3.8+ TTS: one part per turn with speech_metadata.speaker (+ that speaker's turn style); text stays verbatim.
       const styleOf = (who) => { const sp = o.speakers.find((x) => x.speaker === who); return (sp && sp.style) || o.style || ''; };
-      reqParts = o.lines.map((l) => { const md = { speaker: l.speaker }; const st = styleOf(l.speaker); if (st) md.style = st; return { text: String(l.text).replace(/\s+/g, ' ').trim(), speech_metadata: md }; });
+      reqParts = o.lines.map((l) => { const md = { speaker: l.speaker }; const st = l.style || styleOf(l.speaker); if (st) md.style = st; return { text: String(l.text).replace(/\s+/g, ' ').trim(), speech_metadata: md }; });
     } else if (multi) {
       // Older TTS models: "Name: line" per line, with an instruction naming both speakers.
-      part.text = 'TTS the following conversation between ' + o.speakers[0].speaker + ' and ' + o.speakers[1].speaker + (o.style ? ' (' + o.style + ')' : '') + ':\n' + text;
+      // Each speaker's own delivery goes into the instruction (older models have no per-turn style field).
+      const per = o.speakers.filter((sp) => sp.style).map((sp) => sp.speaker + ' sounds ' + sp.style.replace(/\.\s*$/, '')).join('. ');
+      part.text = 'TTS the following conversation between ' + o.speakers[0].speaker + ' and ' + o.speakers[1].speaker + (per ? '. ' + per + '.' : (o.style ? ' (' + o.style + ')' : '')) + ' Keep the two voices clearly different, pause briefly before punchlines:\n' + text;
     } else {
       if (structured && o.style) part.speech_metadata = { style: o.style };
       if (!structured && o.prefix) part.text = o.prefix.replace(/:?\s*$/, ': ') + text;
