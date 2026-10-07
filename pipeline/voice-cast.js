@@ -159,8 +159,10 @@ function compressSilence(x, maxGap, keep) {
   out.forEach((b, k) => { y.set(b, o); if (k && b.byteOffset !== out[k - 1].byteOffset + out[k - 1].byteLength) cuts.push(o); o += b.length; });
   const f = Math.round(0.004 * RATE); cuts.forEach((c) => { for (let i = -f; i < f; i++) { const j = c + i; if (j >= 0 && j < y.length) y[j] *= Math.abs(i) / f; } }); return y; // fade each cut (no clicks)
 }
-// Character colour (ffmpeg): Claim Guy brighter + compressed (presence/air boost, low cut), Skeptic darker and warmer.
-const EQ = { claim: E('EQ_CLAIM', 'highpass=f=150,equalizer=f=3000:t=q:w=1.2:g=5,treble=g=2.5:f=6000,deesser=i=0.3,acompressor=threshold=-22dB:ratio=3:attack=4:release=80:makeup=2'),
+// Character colour (ffmpeg): Claim Guy brighter + compressed (presence boost at 2.5 kHz, split-band de-esser: the band above
+// 4.5 kHz is compressed 8:1, no air shelf; v3's treble shelf made his "s" harsh, ZCR ~0.8 at 0.9 FS. ffmpeg's deesser filter
+// added DC at strong settings, hence the split band), Skeptic darker and warmer.
+const EQ = { claim: E('EQ_CLAIM', 'highpass=f=150,equalizer=f=2500:t=q:w=1.0:g=4,asplit[a][b];[a]lowpass=f=4500:p=2,lowpass=f=4500:p=2[l];[b]highpass=f=4500:p=2,highpass=f=4500:p=2,acompressor=threshold=-34dB:ratio=8:attack=1:release=40[h];[l][h]amix=inputs=2:normalize=0,acompressor=threshold=-22dB:ratio=3:attack=4:release=80:makeup=2,highpass=f=80'),
   skeptic: E('EQ_SKEPTIC', 'highpass=f=55,bass=g=3:f=170,equalizer=f=3500:t=q:w=1.5:g=-2,lowpass=f=7000') };
 function tempoGain(x, tempo, gainDb, tag, who) {
   let y = who === 'claim' ? compressSilence(x, 0.22, 0.12) : compressSilence(x, 0.6, 0.42);
@@ -169,6 +171,7 @@ function tempoGain(x, tempo, gainDb, tag, who) {
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', a, '-af', af, '-ar', String(RATE), '-ac', '1', b]); y = A.readWav(b).x; fs.unlinkSync(a); fs.unlinkSync(b); }
   let e = 0; let n = 0; for (let i = 0; i < y.length; i++) { if (Math.abs(y[i]) > 0.01) { e += y[i] ** 2; n++; } } const rms = Math.sqrt(e / Math.max(1, n));
   const g = Math.pow(10, gainDb / 20) / (rms || 1); const out = new Float32Array(y.length); for (let i = 0; i < y.length; i++) { const v = y[i] * g; out[i] = Math.tanh(v * 1.1) / Math.tanh(1.1); }
+  { const LIM = Number(E('VOICE_PEAK', '0.85')); let pk = 0; for (let i = 0; i < out.length; i++) pk = Math.max(pk, Math.abs(out[i])); if (pk > LIM) for (let i = 0; i < out.length; i++) out[i] *= LIM / pk; } // peak ceiling (symmetric, no DC)
   const f = Math.min(out.length >> 1, Math.round(0.006 * RATE)); for (let i = 0; i < f; i++) { out[i] *= i / f; out[out.length - 1 - i] *= i / f; } // no seam clicks
   return out;
 }

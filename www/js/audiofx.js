@@ -191,11 +191,16 @@
       for (const c of o.cues) {
         const d = SFX[c.id]; if (!d) continue; const s = await sample(c.id, sr); if (!s) continue;
         const rate = (s.sr / sr) * (c.rate || 1); const i0 = Math.floor(c.t * sr); const pan = c.pan || 0;
-        const g = d.gain * sv * (c.gain == null ? 1 : c.gain); const n = Math.floor(s.data.length / rate);
+        let g = d.gain * sv * (c.gain == null ? 1 : c.gain); const n = Math.floor(s.data.length / rate);
+        // optional softening (pipeline): stamp sounds cut by stampDb, every effect low-passed (2 x one-pole) and peak-capped
+        if (o.stampDb && (o.stampIds || ['ding', 'wrong']).includes(c.id)) g *= Math.pow(10, -Math.abs(o.stampDb) / 20);
+        const src = new Float32Array(n); for (let j = 0; j < n; j++) { const x = j * rate; const a = Math.floor(x); const fr = x - a; src[j] = ((s.data[a] || 0) * (1 - fr) + (s.data[a + 1] || 0) * fr) * g; }
+        if (o.sfxLowpassHz) { const k1 = onePole(sr, o.sfxLowpassHz); const k2 = onePole(sr, o.sfxLowpassHz); for (let j = 0; j < n; j++) src[j] = k2(k1(src[j])); }
+        if (o.sfxPeak) { let pk = 0; for (let j = 0; j < n; j++) pk = Math.max(pk, Math.abs(src[j])); if (pk > o.sfxPeak) { const q = o.sfxPeak / pk; for (let j = 0; j < n; j++) src[j] *= q; } }
         for (let j = 0; j < n; j++) {
           const i = i0 + j; if (i < 0) continue; if (i >= N) break;
-          const x = j * rate; const a = Math.floor(x); const fr = x - a; const v = (s.data[a] || 0) * (1 - fr) + (s.data[a + 1] || 0) * fr;
-          const gg = g * (1 - 0.35 * actAt(i)); // effects sit a little under the voice
+          const v = src[j];
+          const gg = 1 - 0.35 * actAt(i); // effects sit a little under the voice
           L[i] += v * gg * (1 - Math.max(0, pan)); R[i] += v * gg * (1 + Math.min(0, pan));
         }
         placed.push(c.id);

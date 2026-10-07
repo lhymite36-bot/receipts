@@ -4,6 +4,7 @@
 //   tone   : pure tone (>= 55% of the energy within +-2 FFT bins of one peak, steady pitch) for >= 150 ms at a loud level
 //   click  : isolated impulse in quiet audio (sample jump > 0.2, the 10 ms before and after it both quieter than -34 dBFS;
 //            clicks inside loud speech are masked, and plosives/sibilants stay loud after the jump)
+//   harsh  : loud hiss (20 ms zero-crossing rate > 0.5 and peak > 0.6 FS), e.g. an over-bright "s" or a harsh stamp effect
 //   clip   : > 0.05% of samples at full scale
 // Usage: node pipeline/audio-qa.js <audio or video file> [--allow t0-t1,...] [--json]   (exit 6 when artifacts are found)
 // --allow lists windows (seconds) with intentional sound effects; tones inside them are reported, not failed.
@@ -50,10 +51,16 @@ function scan(x, rate, opts) {
   // an isolated impulse: big sample jump with quiet audio both before it and after it (sibilants and speech onsets stay loud after)
   const h2 = Math.round(0.002 * rate); const lrms = (a, b) => { let e = 0; for (let j = a; j < b; j++) e += x[j] ** 2; return Math.sqrt(e / Math.max(1, b - a)); };
   for (let i = h10 + 1; i < x.length - h10 - h2; i++) { const d = Math.abs(x[i] - x[i - 1]); if (d < 0.2) continue; const pre = lrms(i - h10, i - 1); const post = lrms(i + h2, i + h2 + h10); if (pre < 0.02 && post < 0.02 && d > 8 * Math.max(pre, post) && i / rate - lastClick > 0.05) { ev.push({ kind: 'click', t: +(i / rate).toFixed(3), jump: +d.toFixed(2) }); lastClick = i / rate; } }
+  // harsh noise: 20 ms windows that are almost pure hiss (zero-crossing rate > 0.5) and loud (peak > 0.6 FS): an over-bright "s"
+  // or a harsh effect
+  const h20 = Math.round(0.02 * rate); let hopen = null;
+  for (let s0 = 0; s0 + h20 <= x.length; s0 += h20) { let zc = 0; let pk = 0; for (let i = s0 + 1; i < s0 + h20; i++) { if ((x[i] >= 0) !== (x[i - 1] >= 0)) zc++; pk = Math.max(pk, Math.abs(x[i])); } const z = zc / h20; const bad = z > 0.5 && pk > 0.6; const t = s0 / rate;
+    if (bad && !hopen) hopen = { kind: 'harsh', t: +t.toFixed(2), dur: 0, zcr: +z.toFixed(2), peak: +pk.toFixed(2), allowed: inAllow(t) }; else if (bad) { hopen.zcr = Math.max(hopen.zcr, +z.toFixed(2)); hopen.peak = Math.max(hopen.peak, +pk.toFixed(2)); } else if (hopen) { hopen.dur = +(t - hopen.t).toFixed(2); ev.push(hopen); hopen = null; } }
+  if (hopen) ev.push(hopen);
   // clipping
   let clip = 0; for (let i = 0; i < x.length; i++) if (Math.abs(x[i]) > 0.995) clip++; if (clip / x.length > 0.0005) ev.push({ kind: 'clip', pct: +(clip / x.length * 100).toFixed(3) });
   ev.sort((a, b) => (a.t || 0) - (b.t || 0));
-  const fails = ev.filter((e) => !(e.kind === 'tone' && e.allowed));
+  const fails = ev.filter((e) => !(e.kind === 'tone' && e.allowed));  // harsh noise fails even inside an effect window
   return { ok: !fails.length, refDb: +(20 * Math.log10(ref)).toFixed(1), events: ev, fails };
 }
 module.exports = { scan, decode, RATE };

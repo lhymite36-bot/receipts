@@ -41,7 +41,7 @@ function serve() {
       info0.captions = { measuredTiming: pkg.beats.filter((b) => String(b.text || '').trim()).every((b) => Array.isArray(b.wordAt)), words: words.length, notInExactlyOneChunk: missing, shortWords: words.filter((x) => x.shown < 0.25), chunks: [...new Set(words.map((x) => x.chunk))] };
     } catch (e) { info0.captions = { error: String(e) }; }
     if (window.VTS.audiofx && r.cx && (look.sfx !== false || (look.music && look.music !== 'none'))) {
-      const mo = { total: P.total, lead: 0.3, audioDur: P.audioDur, cues: look.sfx === false ? [] : r.cx.cues, music: look.music || 'none', musicVol: look.musicVol, sfxVol: look.sfxVol, voiceVol: look.voiceVol, duckDb: look.duckDb };
+      const mo = { total: P.total, lead: 0.3, audioDur: P.audioDur, cues: look.sfx === false ? [] : r.cx.cues, music: look.music || 'none', musicVol: look.musicVol, sfxVol: look.sfxVol, voiceVol: look.voiceVol, duckDb: look.duckDb, sfxLowpassHz: look.sfxLowpassHz, sfxPeak: look.sfxPeak, stampDb: look.stampDb, stampIds: look.stampIds };
       const m = await window.VTS.audiofx.mix(buf, mo);
       // levels report: the same mixer with only the voice / only the music, measured where the voice is talking and in its pauses
       try {

@@ -47,7 +47,10 @@
     const space = ctx.measureText(' ').width; const maxW = P.maxW * s * (style === 'boxed' ? 0.86 : 0.98);
     const widths = words.map((w) => ctx.measureText(w).width * (style === 'hormozi' ? 1.06 : 1));
     const lines = layoutLines(ctx, words, maxW, space, widths); const lh = size * (style === 'boxed' ? 1.34 : 1.18);
-    const top = P.cy * s - (lines.length - 1) * lh / 2; const cx0 = P.cx * s;
+    let top = P.cy * s - (lines.length - 1) * lh / 2; const cx0 = P.cx * s;
+    // the title card (text hook) owns the top while it shows: the whole caption block (any row count, incl. the pop-in
+    // overshoot) starts at least 40 px below it, never on or behind it
+    if (r.cx && r.cx.hookVisible && r.cx.hookBottom) { const off = ctx.getTransform().f; const need = (r.cx.hookBottom + 40) * s + size * 0.62 * 1.12; if (top + off < need) top = need - off; }
     const pos = []; lines.forEach((l, li) => { let x = cx0 - l.w / 2; l.ks.forEach((k) => { pos[k] = { x: x + widths[k] / 2, y: top + li * lh, w: widths[k] }; x += widths[k] + space; }); });
     const enter = easeOut((t - chStart) / 0.16);
 

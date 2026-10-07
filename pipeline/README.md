@@ -65,12 +65,15 @@ Each character is voiced **separately** with Gemini TTS (prebuilt voices), then 
   sounded like a loud "system error" beep at the end of each character's last turn (0:17 and 0:34 in sample v2).
   `cleanTake()` cuts any voiced stretch with a burst (30 ms mean > 0.08; real speech stays < 0.04) before splitting, trims the
   dead tail, and removes DC. Every cut is listed in the voice log (`glitchesRemoved`).
-- **Character colour:** Claim Guy is EQ'd brighter (+5 dB at 3 kHz, air shelf, de-esser, compressor) at -13 dB.
+- **Character colour:** Claim Guy is EQ'd brighter (+4 dB at 2.5 kHz, compressor) at -13 dB, with a split-band de-esser: the
+  band above 4.5 kHz is compressed 8:1, so his "s" sounds stay soft. v3's air shelf made them harsh (ZCR ~0.8 at 0.9 FS at
+  0:15.5), and ffmpeg's `deesser` filter added DC at strong settings. Takes are soft-clipped and capped at 0.85 FS (`VOICE_PEAK`).
   Skeptic is darker (bass +3 dB, presence -2 dB, low-pass 7 kHz) at -19.5 dB. Edges and silence cuts get 4-6 ms fades (no seam clicks).
 - **Artifact QA** (`pipeline/audio-qa.js`, run on the voice track and the final Short) flags:
   - noise bursts / DC steps
   - pure-tone beeps: >= 150 ms steady tone at a loud level, outside the planned SFX windows
   - isolated clicks in quiet audio
+  - harsh hiss: 20 ms with zero-crossing rate > 0.5 and peak > 0.6, also inside SFX windows
   - clipping
 - **Captions word for word:** `pipeline/word-times.py` (local faster-whisper `base.en`, no API quota) times every word of the
   final voice. Script words are matched in order and stored as `beats[i].wordAt`, and the renderer uses those onsets instead of
@@ -81,9 +84,18 @@ Each character is voiced **separately** with Gemini TTS (prebuilt voices), then 
   - audio artifacts
   - every word in exactly one caption chunk, each shown for >= 0.25 s, with measured timing
   - music bed >= 15 dB under the voice
+  - voice contrast after the mix: per-line f0 measured on the mp4 (`pipeline/line-f0.js <mp4>`); every Claim Guy line must be
+    >= 4 semitones above every Skeptic line
   A failing Short is not shipped.
 - **Mix** (`LOOK_OVERRIDE` in voice.env): music ducks 12 dB under the voice, effects at 0.6. In sample v3 the music measured
   31 dB below the voice while it talks (-45.9 vs -14.7 dBFS) and -40.5 dBFS in pauses.
+  Sound effects are low-passed at 4.5 kHz and capped at 0.3 FS each. The myth/fact stamp sounds (`ding`, `wrong`) get another
+  -9 dB (`sfxLowpassHz`, `sfxPeak`, `stampDb`).
+- **On-screen rules:** captions start below the title card while it is up (they are pushed down, never drawn over it).
+  Overlays (myth/fact stamp, notification, chat...) never straddle a scene cut: one starting during a transition lands after
+  it, with its sound effect, and clears before the next shot. The stamp is a 1.4 s hit drawn from its own small canvas
+  (its worn-ink holes used to punch black dots into the frame). To check frames at given times without a full render, run
+  `node tests/live/frames-at.js <pkg> <voice.wav> <look.json|-> <out-prefix> t1 t2 ...`.
 
 Scripts are written for the ear: short lines, interjections, the punchline alone on its own beat, and at least 3 Claim Guy lines.
 A script without them is rejected *before* any TTS is spent (twice), then accepted.

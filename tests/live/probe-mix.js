@@ -21,7 +21,7 @@ const [PKG, AUDIO, LOOKF] = process.argv.slice(2);
       beats: r.timeline.map((b) => ({ s: +b.start.toFixed(2), e: +b.end.toFixed(2), text: b.text, words: b.words, wt: (b.wordTimes || []).map((x) => +x.toFixed(2)), chunks: (b.chunks || []).map((q) => q.map((k) => b.words[k]).join(' ')) })) };
     if (stems) {
       const enc = (m) => { const L = m.getChannelData(0); const n = L.length; const a = new Int16Array(n); for (let i = 0; i < n; i++) a[i] = Math.max(-1, Math.min(1, L[i])) * 32767; let s = ''; const u = new Uint8Array(a.buffer); for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return { sr: m.sampleRate, b64: btoa(s) }; };
-      const base = { total: P.total, lead: 0.3, audioDur: P.audioDur, musicVol: look.musicVol, sfxVol: look.sfxVol, voiceVol: look.voiceVol };
+      const base = { total: P.total, lead: 0.3, audioDur: P.audioDur, musicVol: look.musicVol, sfxVol: look.sfxVol, voiceVol: look.voiceVol, duckDb: look.duckDb, sfxLowpassHz: look.sfxLowpassHz, sfxPeak: look.sfxPeak, stampDb: look.stampDb, stampIds: look.stampIds }; // same options as preview-offline.js
       res.stems = {
         full: enc(await window.VTS.audiofx.mix(buf, Object.assign({}, base, { cues: r.cx.cues, music: look.music }))),
         music: enc(await window.VTS.audiofx.mix(buf, Object.assign({}, base, { cues: [], music: look.music, voiceVol: 0 }))),

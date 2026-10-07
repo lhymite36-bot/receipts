@@ -25,6 +25,7 @@
   const FX_LABELS = { none: 'None', 'zoom-punch': 'Zoom punch on face', freeze: 'Record-scratch freeze "yep, that\'s me"', spotlight: 'Dramatic spotlight', impact: 'Impact frame', split: 'Split screen: expectation vs reality',
     'before-after': 'Before / after', chat: 'Text-message chat', notification: 'Notification pop-up', loading: '"Loading…" claim bar', xp: 'XP / level-up bar', checklist: 'Checklist ticks', rating: 'Star rating',
     argument: 'Thought-bubble argument', 'myth-fact': 'Myth / fact stamp', countdown: 'Countdown timer', 'typing-delete': 'Type a paragraph, delete it, send "lol"' };
+  const OVERLAY_FX = ['myth-fact', 'notification', 'loading', 'xp', 'countdown', 'rating', 'checklist', 'chat', 'argument'];
   const SFX_FOR_FX = { 'zoom-punch': 'boom', freeze: 'scratch', spotlight: 'riser', impact: 'boom', split: 'whoosh', 'before-after': 'whoosh', chat: 'typing', notification: 'notif', loading: 'tick', xp: 'levelup', checklist: 'ding', rating: 'pop', argument: 'pop', 'myth-fact': 'wrong', countdown: 'tick', 'typing-delete': 'typing' };
   const STICKERS = ['BRUH', 'WAIT WHAT', 'MYTH', 'FACT', 'RECEIPTS', 'NAH', 'SOURCE?', 'BE SO FR', '😭', 'STAMPED', 'CAP', 'OOF', 'CITED', 'LMAO', 'THE AUDACITY', '🤡', '😳', '🧾', 'BOOKED'];
   const INTENSITY = { chill: { gap: 4.2, label: 'Chill' }, punchy: { gap: 2.6, label: 'Punchy' }, chaotic: { gap: 1.7, label: 'Chaotic' } };
@@ -302,9 +303,16 @@
       if (shotStart) last = b.start;
       // the AI's effect for this beat
       if (b.fxType === 'none' && humour > 0 && /\btyp(ed|ing|e)\b[\s\S]*\b(delet|backspac|eras)\w*/i.test(b.text || '') && !cx.fx.some((f) => f.type === 'typing-delete')) b.fxType = 'typing-delete'; // v1.6
+      let sfxAt = b.start + 0.04; // the beat's own sound effect; it follows an overlay that was moved past a scene cut
       if (b.fxType === 'typing-delete') { const st0 = b.start; const en = Math.max(b.end + 0.6, st0 + 3.6); cx.fx.push({ type: 'typing-delete', start: st0, end: en, beat: i, text: b.fxText || '' }); last = st0; const d = en - st0; cue(st0 + 0.1, 'typing', 1, 0, 3); cue(st0 + d * 0.45, 'whoosh', 0.5, 0, 3); cue(st0 + d * 0.6, 'typing', 0.8, 0, 3); cue(st0 + d * 0.78, 'pop', 0.9, 0, 3); }
-      else if (b.fxType !== 'none') { cx.fx.push({ type: b.fxType, start: b.start, end: Math.max(b.end, b.start + (b.fxType === 'freeze' ? 1.4 : 1.2)), beat: i, text: b.fxText || '' }); last = b.start; if (!b.sfx || b.sfx === 'none') cue(b.start + 0.02, b.fxType === 'myth-fact' && /fact|true/i.test(b.fxText || '') ? 'ding' : SFX_FOR_FX[b.fxType], 1, 0, 3); }
-      if (b.sfx && b.sfx !== 'none') cue(b.start + 0.04, b.sfx, 1, 0, 4);
+      else if (b.fxType !== 'none') {
+        // overlays never straddle a scene cut: one that would start during a shot transition lands after it, and every overlay
+        // clears before the next shot starts; a myth/fact stamp is a short hit (1.4 s), not the whole beat
+        let fs0 = b.start; let fe = Math.max(b.end, b.start + (b.fxType === 'freeze' ? 1.4 : 1.2));
+        if (r.shots && OVERLAY_FX.includes(b.fxType)) { const sh = r.shots[b.shot]; const TR = r.trDur || 0.42; if (sh && sh.idx > 0 && fs0 < sh.start + TR) fs0 = sh.start + TR; if (b.fxType === 'myth-fact') fe = fs0 + 1.4; const nx = r.shots[(b.shot || 0) + 1]; if (nx) fe = Math.min(fe, nx.start); fe = Math.max(fe, fs0 + 0.6); }
+        if (OVERLAY_FX.includes(b.fxType)) sfxAt = fs0 + 0.02;
+        cx.fx.push({ type: b.fxType, start: fs0, end: fe, beat: i, text: b.fxText || '' }); last = b.start; if (!b.sfx || b.sfx === 'none') cue(fs0 + 0.02, b.fxType === 'myth-fact' && /fact|true/i.test(b.fxText || '') ? 'ding' : SFX_FOR_FX[b.fxType], 1, 0, 3); }
+      if (b.sfx && b.sfx !== 'none') cue(sfxAt, b.sfx, 1, 0, 4);
       // pattern interrupts every ~gap seconds
       if (inten && i > 0 && !shotStart && b.start - last >= gap * 0.8) { const k = b.punch ? 'punch' : kinds[zi++ % kinds.length]; cx.cuts.push({ t: b.start, type: k }); last = b.start; if (k === 'whip') cue(b.start - 0.1, 'whoosh', 0.6, 0, 1); if (k === 'punch') cue(b.start, 'boom', 0.7, 0, 2); }
       if (inten) { let guard = 0; while (b.end - last > gap * 1.35 && guard++ < 8) { const tt = last + gap; const wt = b.wordTimes.find((x) => x >= tt - 0.2 && x < b.end - 0.4); if (wt == null) break; cx.cuts.push({ t: wt, type: 'jump' }); last = wt; } }
@@ -394,6 +402,15 @@
   function parseLines(text) { return String(text || '').split('|').map((s) => s.trim()).filter(Boolean).slice(0, 5); }
   function speakerOf(line) { const m = /^([^:]{1,16}):\s*(.*)$/.exec(line); if (!m) return [null, line]; return [m[1].trim(), m[2].trim()]; }
 
+  const stampCache = new Map();
+  function stampImage(lab, col) {
+    const key = lab + '|' + col; if (stampCache.has(key)) return stampCache.get(key);
+    const m = document.createElement('canvas').getContext('2d'); m.font = '900 120px ' + FONT; const w = Math.ceil(m.measureText(lab).width + 120);
+    const c = document.createElement('canvas'); c.width = w + 40; c.height = 230; const ctx = c.getContext('2d'); ctx.translate(c.width / 2, c.height / 2);
+    ctx.font = '900 120px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 16; ctx.strokeStyle = col; rr(ctx, -w / 2, -95, w, 190, 26); ctx.stroke(); ctx.lineWidth = 6; rr(ctx, -w / 2 + 18, -77, w - 36, 154, 16); ctx.stroke(); ctx.fillStyle = col; ctx.fillText(lab, 0, 8);
+    ctx.globalCompositeOperation = 'destination-out'; for (let q = 0; q < 40; q++) { ctx.beginPath(); ctx.arc((hash(q) - 0.5) * w, (hash(q + 7) - 0.5) * 180, 2 + hash(q + 3) * 5, 0, TAU); ctx.fill(); }
+    stampCache.set(key, c); return c;
+  }
   function drawFx(r, t) {
     const cx = r.cx; const f = fxAt(cx, t); if (!f) return; const p = t - f.start; const dur = Math.max(0.6, f.end - f.start); const b = r.timeline[f.beat] || {};
     const cam = r.stage && r.stage._camLast; const heads = (r.stage && r.stage.lastHeads) || []; const hd = heads.find((h) => h.who === (b.sc && b.sc.speaker)) || heads[0] || { x: 600, y: 1150, r: 92 };
@@ -494,7 +511,10 @@
           ctx.fillStyle = OLC; ctx.textAlign = 'center'; ls.forEach((s, j) => ctx.fillText(s, 0, (j - (ls.length - 1) / 2) * 48 + 4)); ctx.restore(); break; }
         case 'myth-fact': {
           const fact = /fact|true|real/i.test(txt) && !/myth/i.test(txt); const lab = (txt && txt.length < 16 ? txt : (fact ? 'FACT' : 'MYTH')).toUpperCase(); const k = p < 0.18 ? 3 - 2 * (p / 0.18) : 1; if (p < 0.02) break;
-          ctx.save(); ctx.globalAlpha = out * Math.min(1, p / 0.08); ctx.translate(540, 820); ctx.rotate(-0.16); ctx.scale(k, k); const col = fact ? '#16a34a' : '#e11d48'; ctx.font = '900 120px ' + FONT; const w = ctx.measureText(lab).width + 120; ctx.lineWidth = 16; ctx.strokeStyle = col; rr(ctx, -w / 2, -95, w, 190, 26); ctx.stroke(); ctx.lineWidth = 6; rr(ctx, -w / 2 + 18, -77, w - 36, 154, 16); ctx.stroke(); ctx.fillStyle = col; ctx.fillText(lab, 0, 8); ctx.globalCompositeOperation = 'destination-out'; for (let q = 0; q < 40; q++) { ctx.beginPath(); ctx.arc((hash(q) - 0.5) * w, (hash(q + 7) - 0.5) * 180, 3 + hash(q + 3) * 7, 0, TAU); ctx.fill(); } ctx.restore();
+          // the stamp (with its worn-ink holes) is drawn on its own small canvas: punching the holes on the main canvas erased
+          // the video under it, which showed up as stray black dots in the encoded frames
+          const col = fact ? '#16a34a' : '#e11d48'; const img = stampImage(lab, col);
+          ctx.save(); ctx.globalAlpha = out * Math.min(1, p / 0.08); ctx.translate(540, 800); ctx.rotate(-0.16); ctx.scale(k, k); ctx.drawImage(img, -img.width / 2, -img.height / 2); ctx.restore();
           break; }
         default: break;
       }
