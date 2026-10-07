@@ -37,6 +37,7 @@ jobs:
         run: |
           which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
           npm install --no-save --no-audit --no-fund puppeteer-core@23.11.1
+          python3 -m venv /tmp/asr && /tmp/asr/bin/pip install -q faster-whisper && echo "ASR_PYTHON=/tmp/asr/bin/python" >> $GITHUB_ENV
       - name: Pick day
         run: echo "DAY=${{ inputs.day }}" >> $GITHUB_ENV && [ -n "${{ inputs.day }}" ] || echo "DAY=$(TZ=Asia/Kolkata date +%F)" >> $GITHUB_ENV
       - name: Render

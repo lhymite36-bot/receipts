@@ -16,8 +16,8 @@ const OUT = process.argv[2]; if (!OUT) { console.error('usage: voice-cast.js <ou
 const KEY = process.env.GEMINI_API_KEY; if (!KEY) { console.error('NO GEMINI_API_KEY'); process.exit(2); }
 const E = (k, d) => (process.env[k] !== undefined && process.env[k] !== '' ? process.env[k] : d);
 const CAST = {
-  skeptic: { voice: E('VOICE_SKEPTIC', 'Algenib'), style: E('STYLE_SKEPTIC', 'Say in a dry, deadpan, sarcastic, unimpressed voice, crisp and clipped, with a smirk, letting each punchline land flat'), gainDb: -19, tempo: Number(E('SKEPTIC_TEMPO', '1.0')) },
-  claim: { voice: E('VOICE_CLAIM', 'Puck'), style: E('STYLE_CLAIM', 'Say like an overconfident, loud, hyped-up influencer selling a miracle, fast and theatrical, totally sure of himself'), gainDb: -14.5, tempo: Number(E('CLAIM_TEMPO', '1.08')) },
+  skeptic: { voice: E('VOICE_SKEPTIC', 'Algenib'), style: E('STYLE_SKEPTIC', 'Say in a dry, deadpan, sarcastic, unimpressed voice, crisp and clipped, with a smirk, letting each punchline land flat'), gainDb: Number(E('GAIN_SKEPTIC', '-19.5')), tempo: Number(E('SKEPTIC_TEMPO', '1.0')) },
+  claim: { voice: E('VOICE_CLAIM', 'Puck'), style: E('STYLE_CLAIM', 'Say like an overconfident, loud, hyped-up influencer selling a miracle, fast and theatrical, totally sure of himself'), gainDb: Number(E('GAIN_CLAIM', '-13')), tempo: Number(E('CLAIM_TEMPO', '1.08')) },
 };
 const MODELS = E('TTS_MODELS', 'gemini-3.8-flash-tts,gemini-2.5-flash-preview-tts').split(',').map((s) => s.trim()).filter(Boolean);
 const FLAGGED = E('TTS_FLAGGED_MODELS', 'gemini-3.8-flash-lite-tts,gemini-3.1-flash-tts-preview').split(',').map((s) => s.trim()).filter(Boolean);
@@ -52,6 +52,7 @@ function ttsPrompt(model, style, text, batch) {
   return { model, parts: legacy };
 }
 async function ttsLive(model, voice, prompt) {
+  if (process.env.TTS_OFFLINE === '1') throw Object.assign(new Error(model + ' not called (TTS_OFFLINE=1: cached takes only)'), { quota: true });
   const body = { contents: [{ role: 'user', parts: prompt.parts }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } };
   for (let a = 1; ; a++) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: JSON.stringify(body) });
@@ -84,6 +85,26 @@ function split(x, n, wc) {
   const segs = []; let st = first; cuts.forEach((c) => { segs.push([st, c.a]); st = c.b; }); segs.push([st, last + 1]);
   return segs.map(([a, b]) => seg(a, b));
 }
+// Take cleanup, before any splitting: Gemini 3.8 TTS takes were seen ending in a ~0.14 s DC-shifted, full-scale noise burst
+// (it sounded like a loud "system error" beep in the Short and stretched the pause before it). Any voiced stretch that
+// contains a burst (30 ms mean > 0.08; real speech stays < 0.04) is cut out together with the silence before it, then DC is
+// removed (one-pole high-pass at 50 Hz). Returns { x, glitches: [{ t, dur }] }.
+function cleanTake(x0) {
+  const hop = Math.round(0.01 * RATE); const n = Math.floor(x0.length / hop); const x = Float32Array.from(x0); const glitches = [];
+  const fr = []; for (let k = 0; k < n; k++) { let e = 0; for (let i = 0; i < hop; i++) e += x[k * hop + i] ** 2; fr.push(Math.sqrt(e / hop)); }
+  const th = Math.max(0.006, A.median(fr.filter((v) => v > 0.006)) * 0.15 || 0.006);
+  const bad = new Uint8Array(n); for (let k = 0; k + 3 <= n; k++) { let m = 0; for (let i = 0; i < 3 * hop; i++) m += x[k * hop + i]; if (Math.abs(m / (3 * hop)) > 0.08) for (let j = k; j < k + 3; j++) bad[j] = 1; }
+  for (let k = 0; k < n; k++) {
+    if (!bad[k]) continue; let a = k; while (a > 0 && fr[a - 1] > th) a--; let b = k; while (b < n && (fr[b] > th || bad[b])) b++;
+    if ((b - a) * 0.01 > 0.6) { for (let j = a; j < b; j++) bad[j] = 0; continue; } // long stretch: real speech, leave it to ASR/QA
+    glitches.push({ t: +(a * 0.01).toFixed(2), dur: +((b - a) * 0.01).toFixed(2) });
+    for (let i = a * hop; i < Math.min(x.length, b * hop); i++) x[i] = 0; for (let j = a; j < b; j++) { bad[j] = 0; fr[j] = 0; } k = b;
+  }
+  // a cut burst at the very end leaves a long dead tail: trim trailing silence to 0.25 s
+  let last = n - 1; while (last > 0 && fr[last] <= th) last--; const keep = Math.min(x.length, (last + 25) * hop);
+  const y = x.subarray(0, keep); let px = 0; let py = 0; const a = Math.exp(-2 * Math.PI * 50 / RATE); for (let i = 0; i < y.length; i++) { const v = y[i]; py = a * (py + v - px); px = v; y[i] = py; }
+  return { x: y, glitches };
+}
 // Our timing, not the model's: internal pauses longer than maxGap s are shortened to keep s (Claim Guy rattles on, Skeptic keeps short beats).
 // Batch-take aligner: for each turn boundary, candidate pauses (nearest to the word-share estimate first) are checked by
 // transcribing the audio up to that pause (Gemini audio understanding: text quota, not TTS quota) and comparing it with the
@@ -113,7 +134,7 @@ async function alignSplit(x, paras) {
   const h0 = await transcribe(x.subarray(first * hop, Math.min(x.length, (first + 400) * hop))); if (h0 == null) return null;
   if (!opens(h0)) {
     let found = false;
-    for (const q of gaps.filter((q) => q.c < first + (last - first) * 0.6).sort((p, r) => (r.b - r.a) - (p.b - p.a)).slice(0, 8)) { const hh = await transcribe(x.subarray(q.b * hop, Math.min(x.length, (q.b + 400) * hop))); if (hh == null) return null; if (opens(hh)) { console.log('  aligner: trimmed read-aloud preamble (' + ((q.b - first) / 100).toFixed(1) + ' s)'); first = q.b; found = true; break; } }
+    for (const q of gaps.filter((q) => q.c < first + (last - first) * 0.85).sort((p, r) => (r.b - r.a) - (p.b - p.a)).slice(0, 8)) { const hh = await transcribe(x.subarray(q.b * hop, Math.min(x.length, (q.b + 400) * hop))); if (hh == null) return null; if (opens(hh)) { console.log('  aligner: trimmed read-aloud preamble (' + ((q.b - first) / 100).toFixed(1) + ' s)'); first = q.b; found = true; break; } }
     if (!found) { console.log('  aligner: take does not open with turn 1 (skipped or misread)'); return null; }
   }
   const wc = paras.map((p) => words(p)); const W = wc.reduce((p, q) => p + q, 0); let cum = 0; const cuts = []; let st = first;
@@ -134,14 +155,21 @@ function compressSilence(x, maxGap, keep) {
   const th = Math.max(0.006, Math.max(...fr) * 0.05); const out = []; let k = 0;
   while (k < n) { if (fr[k] > th) { out.push(x.subarray(k * hop, (k + 1) * hop)); k++; continue; } let j = k; while (j < n && fr[j] <= th) j++; const len = (j - k) * 0.01;
     if (len > maxGap && k > 0 && j < n) { const kk = Math.round(keep / 0.01); out.push(x.subarray(k * hop, (k + Math.ceil(kk / 2)) * hop)); out.push(x.subarray((j - Math.floor(kk / 2)) * hop, j * hop)); } else out.push(x.subarray(k * hop, j * hop)); k = j; }
-  out.push(x.subarray(n * hop)); const tot = out.reduce((a, b) => a + b.length, 0); const y = new Float32Array(tot); let o = 0; out.forEach((b) => { y.set(b, o); o += b.length; }); return y;
+  out.push(x.subarray(n * hop)); const tot = out.reduce((a, b) => a + b.length, 0); const y = new Float32Array(tot); let o = 0; const cuts = [];
+  out.forEach((b, k) => { y.set(b, o); if (k && b.byteOffset !== out[k - 1].byteOffset + out[k - 1].byteLength) cuts.push(o); o += b.length; });
+  const f = Math.round(0.004 * RATE); cuts.forEach((c) => { for (let i = -f; i < f; i++) { const j = c + i; if (j >= 0 && j < y.length) y[j] *= Math.abs(i) / f; } }); return y; // fade each cut (no clicks)
 }
+// Character colour (ffmpeg): Claim Guy brighter + compressed (presence/air boost, low cut), Skeptic darker and warmer.
+const EQ = { claim: E('EQ_CLAIM', 'highpass=f=150,equalizer=f=3000:t=q:w=1.2:g=5,treble=g=2.5:f=6000,deesser=i=0.3,acompressor=threshold=-22dB:ratio=3:attack=4:release=80:makeup=2'),
+  skeptic: E('EQ_SKEPTIC', 'highpass=f=55,bass=g=3:f=170,equalizer=f=3500:t=q:w=1.5:g=-2,lowpass=f=7000') };
 function tempoGain(x, tempo, gainDb, tag, who) {
   let y = who === 'claim' ? compressSilence(x, 0.22, 0.12) : compressSilence(x, 0.6, 0.42);
-  if (Math.abs(tempo - 1) > 0.005) { const a = `/tmp/vc-${process.pid}-${tag}-a.wav`; const b = `/tmp/vc-${process.pid}-${tag}-b.wav`; A.writeWav(a, x, RATE);
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', a, '-af', 'atempo=' + tempo, '-ar', String(RATE), '-ac', '1', b]); y = A.readWav(b).x; fs.unlinkSync(a); fs.unlinkSync(b); }
+  const af = [Math.abs(tempo - 1) > 0.005 ? 'atempo=' + tempo : '', EQ[who] || ''].filter(Boolean).join(',');
+  if (af) { const a = `/tmp/vc-${process.pid}-${tag}-a.wav`; const b = `/tmp/vc-${process.pid}-${tag}-b.wav`; A.writeWav(a, y, RATE);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', a, '-af', af, '-ar', String(RATE), '-ac', '1', b]); y = A.readWav(b).x; fs.unlinkSync(a); fs.unlinkSync(b); }
   let e = 0; let n = 0; for (let i = 0; i < y.length; i++) { if (Math.abs(y[i]) > 0.01) { e += y[i] ** 2; n++; } } const rms = Math.sqrt(e / Math.max(1, n));
   const g = Math.pow(10, gainDb / 20) / (rms || 1); const out = new Float32Array(y.length); for (let i = 0; i < y.length; i++) { const v = y[i] * g; out[i] = Math.tanh(v * 1.1) / Math.tanh(1.1); }
+  const f = Math.min(out.length >> 1, Math.round(0.006 * RATE)); for (let i = 0; i < f; i++) { out[i] *= i / f; out[out.length - 1 - i] *= i / f; } // no seam clicks
   return out;
 }
 // A turn = consecutive lines of one character. Inside a turn, a punchline is preceded by "..." so the voice takes a beat.
@@ -153,13 +181,42 @@ async function castCharacter(model, who, ls) {
   // Default: one request per character (saves TTS quota), split per turn with the aligner; TTS_BATCH=0 or a failed
   // alignment -> one request per turn.
   if (turns.length > 1 && process.env.TTS_BATCH !== '0') {
-    const x = await tts(model, c.voice, ttsPrompt(model, c.style, turns.map(turnText), true)); const segs = await alignSplit(x, turns.map(turnText));
+    const ct = cleanTake(await tts(model, c.voice, ttsPrompt(model, c.style, turns.map(turnText), true))); if (ct.glitches.length) console.log('  removed TTS glitch burst(s): ' + JSON.stringify(ct.glitches)); const x = ct.x; const segs = await alignSplit(x, turns.map(turnText));
     const ok = segs && segs.every((sg, k) => { const spw = (sg.length / RATE) / Math.max(1, words(turnText(turns[k]))); return spw > 0.15 && spw < 1.2; });
-    if (ok) return { units: segs.map((sg, k) => ({ ls: turns[k], x: sg })), method: 'one request per character, aligned + split per turn', calls: 1 };
+    if (ok) return { units: segs.map((sg, k) => ({ ls: turns[k], x: sg })), method: 'one request per character, aligned + split per turn', calls: 1, glitches: ct.glitches };
     console.log('  batch take did not split into ' + turns.length + ' turns; falling back to one request per turn');
   }
-  const units = []; for (const t of turns) { const x = await tts(model, c.voice, ttsPrompt(model, c.style, turnText(t), false)); units.push({ ls: t, x: split(x, 1, [1])[0] }); }
-  return { units, method: 'one request per turn', calls: turns.length };
+  const units = []; const glitches = []; for (const t of turns) { const ct = cleanTake(await tts(model, c.voice, ttsPrompt(model, c.style, turnText(t), false))); if (ct.glitches.length) { console.log('  removed TTS glitch burst(s): ' + JSON.stringify(ct.glitches)); glitches.push(...ct.glitches); } units.push({ ls: t, x: split(ct.x, 1, [1])[0] }); }
+  return { units, method: 'one request per turn', calls: turns.length, glitches };
+}
+// Word timing for the captions: local faster-whisper (pipeline/word-times.py, no API quota) gives word onsets in the final
+// voice track; the script words are matched to them in order (edit-distance alignment, fuzzy word match), onsets are
+// snapped to the first voiced 10 ms frame, and unmatched words are interpolated. Saved into the pkg as beats[i].wordAt
+// (seconds into the voice), which the renderer uses instead of its loudness-based estimate.
+const ntok = (w) => toks(w).join('');
+function lev(a, b) { const d = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; }
+const like = (a, b) => !!a && !!b && (a === b || 1 - lev(a, b) / Math.max(a.length, b.length) >= 0.6 || (a.length >= 4 && b.startsWith(a.slice(0, 4)) && Math.abs(a.length - b.length) <= 3));
+function wordTimes(all) {
+  const py = E('ASR_PYTHON', fs.existsSync('/home/box/.venvs/asr/bin/python') ? '/home/box/.venvs/asr/bin/python' : 'python3');
+  const tmp = `/tmp/vc-${process.pid}-words.wav`; A.writeWav(tmp, all, RATE); let heard;
+  try { heard = JSON.parse(execFileSync(py, [path.join(__dirname, 'word-times.py'), tmp, E('ASR_LOCAL_MODEL', 'base.en')], { maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'pipe'] }).toString()); } catch (e) { console.log('  word timing unavailable: ' + String(e.message).split('\n')[0].slice(0, 200)); return null; } finally { fs.rmSync(tmp, { force: true }); }
+  // whisper sometimes merges "three-second" etc.: split heard tokens on hyphens/spaces, sharing the time span
+  const H = []; heard.forEach((h) => { const parts = String(h.w).split(/[\s-]+/).filter((q) => ntok(q)); parts.forEach((q, k) => H.push({ w: ntok(q), s: h.s + (h.e - h.s) * k / parts.length, e: h.s + (h.e - h.s) * (k + 1) / parts.length })); });
+  const Sx = []; pkg.beats.forEach((b, bi) => String(b.text || '').trim().split(/\s+/).filter(Boolean).forEach((w, wi) => Sx.push({ bi, wi, raw: w, w: ntok(w) })));
+  const n = Sx.length; const m = H.length; const D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1)); const B = Array.from({ length: n + 1 }, () => new Uint8Array(m + 1));
+  for (let i = 1; i <= n; i++) { D[i][0] = i; B[i][0] = 1; } for (let j = 1; j <= m; j++) { D[0][j] = j; B[0][j] = 2; }
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) { const sub = D[i - 1][j - 1] + (like(Sx[i - 1].w, H[j - 1].w) ? 0 : 1.2); const del = D[i - 1][j] + 1; const ins = D[i][j - 1] + 1; if (sub <= del && sub <= ins) { D[i][j] = sub; B[i][j] = 0; } else if (del <= ins) { D[i][j] = del; B[i][j] = 1; } else { D[i][j] = ins; B[i][j] = 2; } }
+  for (let i = n, j = m; i > 0 || j > 0;) { const k = B[i][j]; if (i > 0 && j > 0 && k === 0) { Sx[i - 1].h = H[j - 1]; Sx[i - 1].ok = like(Sx[i - 1].w, H[j - 1].w); i--; j--; } else if (i > 0 && (k === 1 || j === 0)) i--; else j--; }
+  // snap onsets to the first voiced frame inside the heard word span
+  const hop = Math.round(0.01 * RATE); const fr = []; for (let s = 0; s + hop <= all.length; s += hop) { let e = 0; for (let i = 0; i < hop; i++) e += all[s + i] ** 2; fr.push(Math.sqrt(e / hop)); }
+  const th = Math.max(0.006, A.median(fr.filter((v) => v > 0.006)) * 0.2);
+  Sx.forEach((x) => { if (!x.h) return; let k = Math.floor(x.h.s / 0.01); const kEnd = Math.max(k + 1, Math.floor(x.h.e / 0.01)); while (k < kEnd && fr[k] <= th) k++; x.t = k < kEnd ? k * 0.01 : x.h.s; });
+  // interpolate words without a heard match; keep onsets increasing
+  for (let i = 0; i < n; i++) if (Sx[i].t == null) { let a = i - 1; while (a >= 0 && Sx[a].t == null) a--; let b = i + 1; while (b < n && Sx[b].t == null) b++; const ta = a >= 0 ? Sx[a].t : 0.05; const tb = b < n ? Sx[b].t : all.length / RATE - 0.3; Sx[i].t = ta + (tb - ta) * (i - a) / (b - a); Sx[i].interp = true; }
+  for (let i = 1; i < n; i++) if (Sx[i].t < Sx[i - 1].t + 0.06) Sx[i].t = Sx[i - 1].t + 0.06;
+  pkg.beats.forEach((b, bi) => { const ws = Sx.filter((x) => x.bi === bi); if (ws.length) b.wordAt = ws.map((x) => +x.t.toFixed(3)); else delete b.wordAt; });
+  const missing = Sx.filter((x) => x.w && !x.ok).map((x) => x.raw); const extra = H.filter((h) => !Sx.some((x) => x.h === h)).map((h) => h.w);
+  return { words: n, matched: n - missing.length, missing, extra, heard: heard.map((h) => h.w).join(' ') };
 }
 (async () => {
   const groups = { skeptic: lines.filter((l) => l.who === 'skeptic'), claim: lines.filter((l) => l.who === 'claim') };
@@ -191,6 +248,10 @@ async function castCharacter(model, who, ls) {
   parts.push(new Float32Array(Math.round(0.35 * RATE)));
   const total = parts.reduce((s, p) => s + p.length, 0); const all = new Float32Array(total); let o = 0; parts.forEach((p) => { all.set(p, o); o += p.length; });
   A.writeWav(OUT + '.voice.wav', all, RATE);
+  // artifacts in the finished voice track (beeps, bursts, clicks, clipping): pipeline/audio-qa.js
+  const aq = require('./audio-qa').scan(all, RATE); const glitchesRemoved = Object.fromEntries(Object.entries(casts).map(([w, c]) => [w, c.glitches || []]));
+  // caption word timing
+  let wt = null; if (process.env.WORD_TIMES !== '0') { wt = wordTimes(all); if (wt) { fs.writeFileSync(OUT + '.pkg.json', JSON.stringify(p0.pkg ? Object.assign(p0, { pkg }) : pkg, null, 1)); console.log(`  word timing: ${wt.matched}/${wt.words} script words heard in order` + (wt.missing.length ? ' | not heard: ' + wt.missing.join(' ') : '')); } }
   // QA
   const agg = (who) => { const L = log.filter((x) => x.who === who && x.voiced > 8); if (!L.length) return null; const w = L.map((x) => x.dur);
     const wm = (k) => +(L.reduce((s, x) => s + x[k] * x.dur, 0) / w.reduce((s, v) => s + v, 0)).toFixed(2); return { lines: L.length, f0: Math.round(A.median(L.map((x) => x.f0))), f0StdSt: wm('f0StdSt'), lineF0SpreadSt: +A.std(L.map((x) => 12 * Math.log2(x.f0))).toFixed(2), rmsDb: wm('rmsDb'), rmsStdDb: wm('rmsStdDb'), centroid: Math.round(wm('centroid')), wps: wm('wps') }; };
@@ -208,9 +269,11 @@ async function castCharacter(model, who, ls) {
   chk('every take says exactly its lines (ASR similarity >= 0.75; catches read-aloud instructions / skipped words)', asrN === 0 ? true : !asrBad.length, asrN ? { badTurns: asrBad, checked: asrN } : 'ASR unavailable');
   for (const [nm, X] of [['Skeptic', S], ['Claim Guy', C]]) if (X) chk(nm + ' not monotone (pitch variation >= 2.0 st within lines)', X.f0StdSt >= 2.0, X.f0StdSt);
   if (C) chk('Claim Guy energy varies (loudness std >= 3 dB)', C.rmsStdDb >= 3, C.rmsStdDb);
+  chk('no beeps, noise bursts, clicks or clipping in the voice track (audio-qa)', aq.ok, aq.fails.length ? aq.fails : { glitchBurstsRemovedFromTakes: glitchesRemoved });
+  if (process.env.WORD_TIMES !== '0') chk('voice says the script word for word (local ASR, >= 92% of words heard in order); caption timing from heard word onsets', wt && wt.matched / wt.words >= 0.92, wt ? { matched: wt.matched + '/' + wt.words, notHeard: wt.missing, extraHeard: wt.extra } : 'local ASR unavailable (pipeline/word-times.py needs faster-whisper)');
   const flagged = Object.values(usedBy).some((m) => FLAGGED.includes(m)); if (flagged) chk('no flagged (flatter) TTS model used', false, usedBy);
   const pass = checks.every((c) => c.ok);
-  const report = { model: usedBy, flaggedModel: flagged, cast: { skeptic: { voice: CAST.skeptic.voice, style: CAST.skeptic.style, tempo: CAST.skeptic.tempo }, claim: { voice: CAST.claim.voice, style: CAST.claim.style, tempo: CAST.claim.tempo } }, duration: +(total / RATE).toFixed(2), summary: { skeptic: S, claim: C }, checks, pass, lines: log };
+  const report = { model: usedBy, flaggedModel: flagged, cast: { skeptic: { voice: CAST.skeptic.voice, style: CAST.skeptic.style, tempo: CAST.skeptic.tempo }, claim: { voice: CAST.claim.voice, style: CAST.claim.style, tempo: CAST.claim.tempo } }, duration: +(total / RATE).toFixed(2), audioQa: aq, glitchesRemoved, wordTiming: wt, summary: { skeptic: S, claim: C }, checks, pass, lines: log };
   fs.writeFileSync(OUT + '.voice-log.json', JSON.stringify(report, null, 1));
   console.log('VOICE', used, 'dur', report.duration, 's | skeptic', JSON.stringify(S), '| claim', JSON.stringify(C));
   checks.forEach((c) => console.log((c.ok ? '  PASS ' : '  FAIL ') + c.name + ' ' + JSON.stringify(c.val)));

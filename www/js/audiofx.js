@@ -178,9 +178,10 @@
     let musicPeak = 0;
     if (o.music && o.music !== 'none' && (o.musicVol == null || o.musicVol > 0)) {
       const m = musicFor(o.music, sr); const base = 0.32 * (o.musicVol == null ? 0.5 : o.musicVol);
+      const duckDepth = o.duckDb == null ? 0.62 : 1 - Math.pow(10, -Math.abs(o.duckDb) / 20); // o.duckDb: music drop under the voice (dB); default ~ -8.4 dB
       const fadeOut = Math.floor(Math.min(1.4, o.total * 0.1) * sr); const fadeIn = Math.floor(0.35 * sr);
       for (let i = 0; i < N; i++) {
-        const duck = 1 - 0.62 * actAt(i); let g = base * duck; if (i < fadeIn) g *= i / fadeIn; if (i > N - fadeOut) g *= (N - i) / fadeOut;
+        const duck = 1 - duckDepth * actAt(i); let g = base * duck; if (i < fadeIn) g *= i / fadeIn; if (i > N - fadeOut) g *= (N - i) / fadeOut;
         const k = i % m.loopLen; L[i] += m.L[k] * g; R[i] += m.R[k] * g; musicPeak = Math.max(musicPeak, Math.abs(m.L[k] * g));
       }
     }

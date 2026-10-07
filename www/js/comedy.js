@@ -273,6 +273,8 @@
     const out = []; let cur = [];
     words.forEach((w, i) => { cur.push(i); const end = /[.!?,;:…]$/.test(w) || /[—-]$/.test(w); if (cur.length >= 3 || end) { out.push(cur); cur = []; } });
     if (cur.length) { if (cur.length === 1 && out.length && out[out.length - 1].length < 3 && !/[.!?]$/.test(words[out[out.length - 1].slice(-1)[0]])) out[out.length - 1].push(cur[0]); else out.push(cur); }
+    // no orphan last word after a full 3-word chunk ("dinner conversation right / now." -> "dinner conversation / right now.")
+    const n = out.length; if (n >= 2 && out[n - 1].length === 1 && out[n - 2].length === 3 && !/[.!?,;:…]$/.test(words[out[n - 2][2]])) out[n - 1].unshift(out[n - 2].pop());
     return out;
   }
   function direct(r) {
@@ -286,6 +288,9 @@
     tl.forEach((b, i) => {
       b.fxType = normFx(b.fx); b.punch = !!b.punch; b.stickerText = String(b.sticker || '').trim().slice(0, 18);
       b.chunks = chunkWords(b.words);
+      // every caption word stays on screen >= 0.3 s: a word spoken right before its chunk is replaced is revealed a little
+      // earlier (never before the chunk's first word), so fast lines never lose a word ("...CONVERSATION NOW", no "RIGHT")
+      b.chunks.forEach((ch, ci) => { const t0 = b.wordTimes[ch[0]]; const end = ci + 1 < b.chunks.length ? b.wordTimes[b.chunks[ci + 1][0]] : (i + 1 < tl.length ? tl[i + 1].start : b.end); ch.forEach((k) => { b.wordTimes[k] = Math.max(t0, Math.min(b.wordTimes[k], end - 0.3)); }); });
       // auto emoji for the caption (emphasis word first)
       let ew = -1; let ef = '';
       const cands = b.words.map((w, wi) => [wi, w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')]);
@@ -597,7 +602,7 @@
   function drawCta(r, t) {
     const cx = r.cx; const text = cx.cta; if (!text || t < cx.ctaStart + 0.25) return; const ctx = r.ctx; const s = r.s; const nine = r.LY.aspect === '9:16';
     const k = easeOutBack((t - cx.ctaStart - 0.25) / 0.35); const { plain, emojis } = splitEmoji(text); const sz = (nine ? 50 : 40) * (r.LY.cap.size || 1) * s;
-    const x = r.DW / 2 * s; const y = (nine ? (r.scenes ? 228 : 300) : r.DH * 0.86) * s; // 9:16: clear zone above the captions (below the Shorts top bar), never on top of them
+    const x = r.DW / 2 * s; const y = (nine ? (r.scenes ? 150 : 300) : r.DH * 0.86) * s; // 9:16: clear zone above the captions (scenes: captions sit near the top, so the pill goes higher), below the Shorts top bar
     ctx.save(); ctx.font = '900 ' + sz + 'px ' + FONT;
     const lines = wrap(ctx, plain, (nine ? 780 : r.DW * 0.7) * s).slice(0, 2); const es = emojis.length ? sz * 1.4 : 0; const w = Math.max.apply(null, lines.map((l) => ctx.measureText(l).width)) + sz * 1.3 + es; const lh = sz * 1.2; const h = lines.length * lh + sz * 0.8;
     // v1.5: keep clear of the "Follow @handle" pill (a two-line sticker used to overlap it)

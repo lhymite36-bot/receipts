@@ -186,7 +186,11 @@
       speaker: b.speaker || '', fx: b.fx || '', fxText: b.fxText || '', sfx: b.sfx || '', sticker: b.sticker || '', punch: !!b.punch, expr: (b.scene && b.scene.emotion) || '' });
     // Voice-locked timing: every word at its onset in the real audio; a beat starts just before its first word.
     let al = null;
-    if (speech && list.length) {
+    // Pipeline-measured word onsets (beats[i].wordAt, seconds into the voice, from ASR word timestamps) win over the estimate.
+    if (list.length && list.every((b) => Array.isArray(b.wordAt) && b.wordAt.length === String(b.text).trim().split(/\s+/).length)) {
+      const onset = []; list.forEach((b) => b.wordAt.forEach((x) => onset.push(LEAD + Number(x)))); al = { onset, measured: true };
+    }
+    if (!al && speech && list.length) {
       // the same voice + script is laid out several times (preview, render, thumbnail): reuse the alignment
       const key = speechStart.toFixed(3) + '|' + speechEnd.toFixed(3) + '|' + list.map((b) => (b.speaker || '') + ':' + String(b.text).trim()).join('\n');
       const cache = speech.cache || (speech.cache = new Map());

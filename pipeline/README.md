@@ -36,7 +36,7 @@ Env: `COUNT` (6), `LEN` (60 = ~45-58 s script), `HUMOUR` (3), `TONE` (sarcastic)
 Each character is voiced **separately** with Gemini TTS (prebuilt voices), then assembled with our own timing:
 - **Skeptic / narrator: `Algenib`**, a low, gravelly voice (~110-130 Hz), dry/deadpan/sarcastic style, clipped,
   "..." before punchlines, 0.6 s silence before each punch beat
-- **Claim Guy: `Puck`**, a bright, high voice (~225 Hz), loud/fast/hyped influencer style, +4.5 dB, tempo x1.08,
+- **Claim Guy: `Puck`**, a bright, high voice (~225 Hz), loud/fast/hyped influencer style, ~6 dB louder, tempo x1.08,
   internal pauses squeezed to 0.12 s so he rattles on
 - Request: one take per character (all of that character's turns, style as `speech_metadata.style` on 3.5+ models,
   the "Say ...:" prefix on older ones). The take is split per turn by an ASR-verified aligner (Gemini audio
@@ -60,6 +60,30 @@ Each character is voiced **separately** with Gemini TTS (prebuilt voices), then 
 
   A failure gets one fresh take, and a second failure means that Short is not shipped (exit 5; `ALLOW_FLAT=1` overrides).
   Per-turn audio is saved in `<out>.lines/`.
+
+- **Take cleanup:** Gemini 3.8 TTS takes were seen ending in a ~0.14 s DC-shifted, full-scale noise burst. In the Short it
+  sounded like a loud "system error" beep at the end of each character's last turn (0:17 and 0:34 in sample v2).
+  `cleanTake()` cuts any voiced stretch with a burst (30 ms mean > 0.08; real speech stays < 0.04) before splitting, trims the
+  dead tail, and removes DC. Every cut is listed in the voice log (`glitchesRemoved`).
+- **Character colour:** Claim Guy is EQ'd brighter (+5 dB at 3 kHz, air shelf, de-esser, compressor) at -13 dB.
+  Skeptic is darker (bass +3 dB, presence -2 dB, low-pass 7 kHz) at -19.5 dB. Edges and silence cuts get 4-6 ms fades (no seam clicks).
+- **Artifact QA** (`pipeline/audio-qa.js`, run on the voice track and the final Short) flags:
+  - noise bursts / DC steps
+  - pure-tone beeps: >= 150 ms steady tone at a loud level, outside the planned SFX windows
+  - isolated clicks in quiet audio
+  - clipping
+- **Captions word for word:** `pipeline/word-times.py` (local faster-whisper `base.en`, no API quota) times every word of the
+  final voice. Script words are matched in order and stored as `beats[i].wordAt`, and the renderer uses those onsets instead of
+  its loudness estimate. Setup: `python3 -m venv ~/.venvs/asr && ~/.venvs/asr/bin/pip install faster-whisper`
+  (box default `/home/box/.venvs/asr`, or set `ASR_PYTHON`; the workflow installs it). The voice QA fails if under 92% of the script words are heard in order. Each caption word stays on screen
+  for at least 0.3 s, and a chunk never leaves a single orphan word ("dinner conversation / right now.").
+- **Final QA** (`pipeline/final-qa.js`, in render-day.sh after the render; writes `<short>.mp4.final-qa.json`):
+  - audio artifacts
+  - every word in exactly one caption chunk, each shown for >= 0.25 s, with measured timing
+  - music bed >= 15 dB under the voice
+  A failing Short is not shipped.
+- **Mix** (`LOOK_OVERRIDE` in voice.env): music ducks 12 dB under the voice, effects at 0.6. In sample v3 the music measured
+  31 dB below the voice while it talks (-45.9 vs -14.7 dBFS) and -40.5 dBFS in pauses.
 
 Scripts are written for the ear: short lines, interjections, the punchline alone on its own beat, and at least 3 Claim Guy lines.
 A script without them is rejected *before* any TTS is spent (twice), then accepted.

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Receipts daily render: bash pipeline/render-day.sh <YYYY-MM-DD> [n ...]   (default: all items in the plan)
 # Picks topics (pipeline/pick-topics.js), then per Short: Gemini script -> pipeline/voice-cast.js (two Gemini voices + QA) -> headless
-# 9:16 render with the Receipts app (tests/live/e2e-live.js, comic-ink look, classic motion) -> <=60 s check -> YouTube metadata.
+# 9:16 render with the Receipts app (tests/live/e2e-live.js, comic-ink look, classic motion) -> final QA (pipeline/final-qa.js)
+# -> <=60 s check -> YouTube metadata.
 # Resumable: finished Shorts (rcp-shortN.mp4 + .meta.json) are skipped; saved scripts/voices are reused.
 # env OUT_ROOT (default /workspace/receipts-pipeline/days), COUNT (6), LEN (60), HUMOUR (3), TONE (sarcastic), GEMINI_API_KEY (required).
 set -u
@@ -48,6 +49,8 @@ for n in $NS; do
     [ -f "$OUT.json" ] && [ -f "$OUT.mp4" ] && break; sleep 10
   done
   [ -f "$OUT.mp4" ] || { echo "FAIL $n (render)"; continue; }
+  # 4) final QA: no beeps/bursts/clicks in the mixed audio, captions word for word, music well under the voice
+  node pipeline/final-qa.js "$OUT.mp4" 2>&1 | tee -a "$OUT.log" | grep -E "^(  (PASS|FAIL)|FINAL_QA)"; [ ${PIPESTATUS[0]} = 0 ] || { echo "FAIL $n (final QA, see $OUT.mp4.final-qa.json; not shipping)"; continue; }
   d=$(dur "$OUT.mp4"); f=$(python3 -c "d=$d;print('ok' if d<=59.5 else ('%.4f'%(d/59.0) if d/59.0<=1.15 else 'long'))")
   if [ "$f" = long ]; then echo "FAIL $n (too long: $d s)"; continue; fi
   if [ "$f" = ok ]; then ffmpeg -y -loglevel error -i "$OUT.mp4" -c:v copy -c:a aac -b:a 192k -movflags +faststart "$FINAL"

@@ -49,7 +49,7 @@ function serve() {
   // Receipts pipeline: MIN_CLAIM_LINES=N rejects a fresh script with fewer than N Claim Guy (speaker "brain") beats, before any TTS is spent.
   const MINC = Number(process.env.MIN_CLAIM_LINES || 0); const nClaim = pkg.speakers.split(',').filter((x) => x === 'brain').length;
   if (!PKGF && MINC && nClaim < MINC) { console.log(t(), 'REJECT_SCRIPT claim lines', nClaim, '<', MINC); await browser.close(); srv.close(); process.exit(3); }
-  fs.writeFileSync(OUTF + '.pkg.json', JSON.stringify(await app(() => window.VTS.app.project.pkg), null, 1));
+  if (!PKGF) fs.writeFileSync(OUTF + '.pkg.json', JSON.stringify(await app(() => window.VTS.app.project.pkg), null, 1)); // a resumed pkg (e.g. with pipeline word timing) is kept as is
   if (process.env.SCRIPT_ONLY === '1') { console.log(t(), 'SCRIPT_ONLY done'); await browser.close(); srv.close(); return; } // Receipts pipeline: voice comes from pipeline/voice-cast.js
   // Resume: <out>.voice.wav from an interrupted run is reused (no TTS call); a fresh AI voice is saved there right away.
   const VOICEF = OUTF + '.voice.wav'; let voice;
