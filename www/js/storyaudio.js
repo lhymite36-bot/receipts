@@ -65,6 +65,16 @@
     let g = Math.pow(10, targetDb / 20) / rms; let pk = 0; for (let i = 0; i < x.length; i++) pk = Math.max(pk, Math.abs(x[i])); if (pk * g > (peakCap || 0.85)) g = (peakCap || 0.85) / pk;
     const y = new Float32Array(x.length); const f = Math.min(x.length >> 1, Math.round(0.006 * RATE)); for (let i = 0; i < x.length; i++) y[i] = x[i] * g; for (let i = 0; i < f; i++) { y[i] *= i / f; y[y.length - 1 - i] *= i / f; } return y;
   }
+  // Sibilance control for a voice line: 20 ms windows that are almost pure hiss (zero-crossing rate > 0.35) and loud are turned
+  // down so their peak sits at thr (gain smoothed over neighbouring windows). Vowels are untouched. Keeps over-bright "s" sounds
+  // under audio-qa's harsh-noise limit (ZCR > 0.5 at > 0.6 FS) without dulling the voice.
+  function deEss(x, rate, o) {
+    rate = rate || RATE; o = o || {}; const thr = o.thr || 0.42; const zth = o.zcr || 0.35; const hop = Math.round(0.01 * rate); const n = Math.ceil(x.length / hop); const g = new Float32Array(n + 2).fill(1); let hits = 0;
+    for (let k = 0; k < n; k++) { const a = Math.max(1, k * hop - (hop >> 1)); const b = Math.min(x.length, a + 2 * hop); let zc = 0; let pk = 0; for (let i = a; i < b; i++) { if ((x[i] >= 0) !== (x[i - 1] >= 0)) zc++; pk = Math.max(pk, Math.abs(x[i])); } if (zc / Math.max(1, b - a) > zth && pk > thr) { g[k] = thr / pk; hits++; } }
+    const gs = new Float32Array(n + 1); for (let k = 0; k <= n; k++) gs[k] = Math.min(g[k], k ? g[k - 1] : 1, g[k + 1] === undefined ? 1 : g[k + 1]);
+    const y = new Float32Array(x.length); for (let i = 0; i < x.length; i++) { const q = i / hop; const k = Math.floor(q); const f = q - k; y[i] = x[i] * (gs[k] * (1 - f) + (gs[Math.min(n, k + 1)]) * f); }
+    return { x: y, hits };
+  }
   // QA over the cast: every character (and the narrator) distinct by measured pitch or timbre; nobody flat
   function castQa(lines, models, qo) {
     qo = qo || {};
@@ -100,7 +110,7 @@
   // Story soundtrack (48 kHz stereo Float32): music bed ducked under the voice, hard silence (no voice, no music, no effects)
   // through the silence beat, panel effects, softened like the main pipeline (4.5 kHz low-pass, 0.3 FS cap per effect).
   async function mix(plan, placed, tm, o) {
-    o = o || {}; const AF = root.VTS.audiofx; const sr = 48000; const N = Math.ceil(tm.total * sr); const L = new Float32Array(N); const R = new Float32Array(N); const V = new Float32Array(N);
+    o = o || {}; const AF = root.VTS.audiofx; const sr = 48000; const N = Math.ceil(tm.total * sr); const L = new Float32Array(N); const R = new Float32Array(N); const V = new Float32Array(N); const MU = o.stems ? new Float32Array(N) : null; const FX = o.stems ? new Float32Array(N) : null;
     placed.forEach((l) => { const i0 = Math.round(l.start * sr); const k = RATE / sr; const n = Math.floor(l.x.length / k); for (let j = 0; j < n; j++) { const p = j * k; const a = Math.floor(p); const v = (l.x[a] || 0) * (1 - (p - a)) + (l.x[a + 1] || 0) * (p - a); const i = i0 + j; if (i < N) V[i] += v * (o.voiceVol == null ? 1 : o.voiceVol); } });
     const act = new Float32Array(Math.ceil(N / 480)); { let v = 0; for (let k = 0; k < act.length; k++) { let e = 0; for (let i = k * 480; i < Math.min(N, k * 480 + 480); i++) e += V[i] * V[i]; const on = Math.sqrt(e / 480) > 0.01 ? 1 : 0; v = on > v ? v + (on - v) * 0.5 : v + (on - v) * 0.04; act[k] = v; } }
     const silence = tm.shots.filter((s) => s.silence).map((s) => [s.start, s.start + s.dur]);
@@ -108,7 +118,7 @@
     const silGain = (t) => { let g = 1; for (const [a, b] of silence) { const f = 0.03; if (t >= a - f && t < a) g = Math.min(g, (a - t) / f); else if (t >= a && t < b) g = 0; else if (t >= b && t < b + 0.12) g = Math.min(g, (t - b) / 0.12); } return g; };
     if (o.music !== 'none') {
       const m = AF.music(o.music || 'storybook', sr); const base = 0.32 * (o.musicVol == null ? 0.45 : o.musicVol); const duck = 1 - Math.pow(10, -12 / 20); const fin = 0.4 * sr; const fout = 0.7 * sr;
-      for (let i = 0; i < N; i++) { let g = base * (1 - duck * act[Math.floor(i / 480)]) * silGain(i / sr); if (i < fin) g *= i / fin; if (i > N - fout) g *= (N - i) / fout; const k = i % m.loopLen; L[i] += m.L[k] * g; R[i] += m.R[k] * g; }
+      for (let i = 0; i < N; i++) { let g = base * (1 - duck * act[Math.floor(i / 480)]) * silGain(i / sr); if (i < fin) g *= i / fin; if (i > N - fout) g *= (N - i) / fout; const k = i % m.loopLen; L[i] += m.L[k] * g; R[i] += m.R[k] * g; if (MU) MU[i] = (m.L[k] + m.R[k]) * 0.5 * g; }
     }
     const cues = [];
     plan.panels.forEach((pn, i) => { const s = tm.shots[i]; if (s.silence) return; if (pn.effect && pn.effect !== 'none') cues.push({ t: s.start + (s.snap ? 0.04 : Math.min(0.5, s.dur * 0.18)), id: pn.effect }); const shot = (plan.shots || [])[i]; const extra = shot && SFX_FOR_CUE[shot.audioCue]; if (extra && extra !== pn.effect) cues.push({ t: s.start + Math.min(0.9, s.dur * 0.4), id: extra, gain: 0.7 }); });
@@ -119,11 +129,13 @@
       for (let j = 0; j < n; j++) { const p = j * rate; const a = Math.floor(p); src[j] = ((smp.data[a] || 0) * (1 - (p - a)) + (smp.data[a + 1] || 0) * (p - a)) * g; }
       let y1 = 0; let y2 = 0; const al = Math.exp(-2 * Math.PI * 4500 / sr); for (let j = 0; j < n; j++) { y1 = (1 - al) * src[j] + al * y1; y2 = (1 - al) * y1 + al * y2; src[j] = y2; }
       let pk = 0; for (let j = 0; j < n; j++) pk = Math.max(pk, Math.abs(src[j])); if (pk > 0.3) for (let j = 0; j < n; j++) src[j] *= 0.3 / pk;
-      const i0 = Math.floor(c.t * sr); for (let j = 0; j < n; j++) { const i = i0 + j; if (i >= N) break; const gg = (1 - 0.35 * act[Math.floor(i / 480)]) * silGain(i / sr); L[i] += src[j] * gg; R[i] += src[j] * gg; }
+      const i0 = Math.floor(c.t * sr); for (let j = 0; j < n; j++) { const i = i0 + j; if (i >= N) break; const gg = (1 - 0.35 * act[Math.floor(i / 480)]) * silGain(i / sr); L[i] += src[j] * gg; R[i] += src[j] * gg; if (FX) FX[i] += src[j] * gg; }
     }
     const lim = (x) => { const a = Math.abs(x); return a <= 0.8 ? x : Math.sign(x) * (0.8 + 0.19 * Math.tanh((a - 0.8) / 0.19)); };
-    for (let i = 0; i < N; i++) { const t = i / sr; const vg = inSil(t) ? 0 : 1; L[i] = lim(L[i] + V[i] * vg); R[i] = lim(R[i] + V[i] * vg); }
-    return { L, R, sr, cues: cues.map((c) => ({ t: +c.t.toFixed(2), id: c.id })), silence };
+    for (let i = 0; i < N; i++) { const t = i / sr; const vg = inSil(t) ? 0 : 1; if (o.stems && !vg) V[i] = 0; L[i] = lim(L[i] + V[i] * vg); R[i] = lim(R[i] + V[i] * vg); }
+    const out = { L, R, sr, cues: cues.map((c) => ({ t: +c.t.toFixed(2), id: c.id })), silence, music: o.music || 'storybook' };
+    if (o.stems) out.stems = { voice: V, sfx: FX, music: MU };
+    return out;
   }
   function toAudioBuffer(m) { const ac = root.VTS.render.audioCtx(); const b = ac.createBuffer(2, m.L.length, m.sr); b.copyToChannel(m.L, 0); b.copyToChannel(m.R, 1); return b; }
   function wavBytes(m) { const nc = 2; const n = m.L.length; const dv = new DataView(new ArrayBuffer(44 + n * nc * 2)); const ws = (o, t) => { for (let i = 0; i < t.length; i++) dv.setUint8(o + i, t.charCodeAt(i)); }; ws(0, 'RIFF'); dv.setUint32(4, 36 + n * nc * 2, true); ws(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, nc, true); dv.setUint32(24, m.sr, true); dv.setUint32(28, m.sr * nc * 2, true); dv.setUint16(32, nc * 2, true); dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, n * nc * 2, true); let o = 44; for (let i = 0; i < n; i++) { dv.setInt16(o, Math.max(-1, Math.min(1, m.L[i])) * 32767, true); dv.setInt16(o + 2, Math.max(-1, Math.min(1, m.R[i])) * 32767, true); o += 4; } return new Uint8Array(dv.buffer); }
@@ -231,7 +243,7 @@
         if (segs && !segs.every((sg, k) => { const spw = sg.length / RATE / Math.max(1, wcount(ls[k].text)); return spw > 0.15 && spw < 1.3; })) segs = null;
       }
       if (!segs) { segs = []; for (const l of ls) { const r = await req(l.text, { voice: l.voice, style: S.styleFor(plan, who, l.delivery) }); model = r.model; const ct = cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g))); segs.push(splitTake(ct.x, 1, [1], RATE)[0]); } }
-      ls.forEach((l, k) => { const x = normalize(segs[k], who === 'narrator' ? -20 : l.delivery === 'whisper' ? -19 : -17, 0.85); out.push(Object.assign({}, l, { x, dur: x.length / RATE, model })); });
+      ls.forEach((l, k) => { const x = deEss(normalize(segs[k], who === 'narrator' ? -20 : l.delivery === 'whisper' ? -19 : -17, 0.85), RATE).x; out.push(Object.assign({}, l, { x, dur: x.length / RATE, model })); });
     }
     out.sort((a, b) => a.panel - b.panel || (a.who === 'narrator' ? -1 : 1));
     const used = [...new Set(models)];
@@ -245,7 +257,7 @@
     const ac = VTS.render.audioCtx(); if (ac.state === 'suspended') await ac.resume(); const b = ac.createBuffer(1, hit.x.length, RATE); b.copyToChannel(hit.x, 0); const s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(); return s;
   }
 
-  const api = { knobs, discoverModels, resetSession, syncKey, keyFp, explain, isFlaggedModel, planModels, RATE, ALLOWED_MODELS, FLAGGED_MODELS, cleanTake, splitTake, features, scan, normalize, castQa, placeLines, mix, toAudioBuffer, wavBytes, castVoices, previewVoice, pcmToFloat, resample, median, semis };
+  const api = { deEss, knobs, discoverModels, resetSession, syncKey, keyFp, explain, isFlaggedModel, planModels, RATE, ALLOWED_MODELS, FLAGGED_MODELS, cleanTake, splitTake, features, scan, normalize, castQa, placeLines, mix, toAudioBuffer, wavBytes, castVoices, previewVoice, pcmToFloat, resample, median, semis };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) { root.VTS = root.VTS || {}; root.VTS.storyAudio = api; }
 }(typeof window !== 'undefined' ? window : null));

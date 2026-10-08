@@ -34,7 +34,7 @@
   $('st-tone').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; input.tone = b.dataset.v; keep(); paintInputs(); });
   $('st-beats').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; input.beats = Number(b.dataset.v); keep(); paintInputs(); });
   $('st-platform').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; input.platform = b.dataset.v; keep(); paintInputs(); });
-  $('st-narrator').addEventListener('change', (e) => { input.narrator = e.target.checked; keep(); if (plan && plan.narrator) { plan.narrator.use = input.narrator; persistPlan(); voiced = null; paintCast(); } });
+  $('st-narrator').addEventListener('change', (e) => { input.narrator = e.target.checked; keep(); if (plan && plan.narrator) { plan.narrator.use = input.narrator; S.syncCaptions(plan); persistPlan(); voiced = null; paintCast(); } });
   $('st-part1').addEventListener('change', (e) => { input.part1 = e.target.checked; keep(); });
   const EXAMPLES = ['She finds a note on her coffee cup that says “Don’t turn around”', 'Every night at 9 the lamp in the empty flat across the street turns on', 'A gift box on his doorstep is ticking', 'The new kid always leaves school five minutes early'];
   $('st-examples').innerHTML = EXAMPLES.map((x) => `<button type="button" class="chip">${esc(x)}</button>`).join('');
@@ -60,7 +60,7 @@
     busy = true; $('st-go').disabled = true; stopPreview();
     try {
       const r = await S.generate({ storyline: input.storyline.trim(), tone: input.tone, beats: input.beats, platform: input.platform, narrator: input.narrator, part1: input.part1 }, (contents, opts) => G.generate(contents, opts), { onStatus: (s) => status('st-status', s, 'live') });
-      plan = r.plan; if (plan.narrator && !input.narrator) plan.narrator.use = false; voiced = null; mixBuf = null; persistPlan();
+      plan = r.plan; if (plan.narrator && !input.narrator) { plan.narrator.use = false; S.syncCaptions(plan); } voiced = null; mixBuf = null; persistPlan();
       status('st-status', `Story boarded: ${plan.panels.length} panels${r.report.fixed.length ? `, ${r.report.fixed.length} rule fixes applied` : ''}. Next: generate the voices.`, 'ok');
       paintPlan(); $('st-result').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) { status('st-status', 'Could not board the story: ' + redact(G.friendlyError ? G.friendlyError(err) : (err && err.message || err)), 'err'); }
@@ -214,7 +214,7 @@
   $('st-dl-png').addEventListener('click', async () => { if (!plan) return; stopPreview(); const r = renderer(); for (let i = 0; i < plan.panels.length; i++) { r.drawPanel(i); const b = await new Promise((res) => canvas.toBlob(res, 'image/png')); download(b, fileName(`-panel-${String(i + 1).padStart(2, '0')}.png`)); await new Promise((res) => setTimeout(res, 350)); } toast(plan.panels.length + ' still frames saved'); drawCurrent(); });
 
   // ---------- boot ----------
-  paintInputs(); if (plan && plan.panels) { try { paintPlan(); } catch (e) { plan = null; } }
+  paintInputs(); if (plan && plan.panels) { try { S.refresh(plan); persistPlan(); paintPlan(); } catch (e) { plan = null; } }
   setMode(load(K.mode, 'myth') === 'story' ? 'story' : 'myth');
   { const fp = A.keyFp(); const was = load(K.keyfp, null); if (was !== fp) { if (was) { save(K.keyAt, Date.now()); localStorage.removeItem(K.queue); localStorage.removeItem(K.useModel); } save(K.keyfp, fp); } }
   if (load(K.queue, null) && plan) { status('st-voice-status', 'Queued: voices will be generated when the Gemini TTS quota is back (about 05:30 IST).', ''); armQueue(); setTimeout(() => genVoices(true), 4000); }

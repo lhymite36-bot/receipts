@@ -59,4 +59,37 @@ const sErr = []; tls.forEach((b) => b.wordTimes.forEach((wt) => sErr.push(wt)));
 ok('long-video sections are voice-aligned too', sAb[Math.floor(sAb.length * 0.9)] < 0.15, { p90Ms: Math.round(sAb[Math.floor(sAb.length * 0.9)] * 1000) });
 const t0 = Date.now(); for (let i = 0; i < 3; i++) { P.speech.cache = null; R.buildTimeline(beats, P.speechStart, P.speechEnd, null, P.speech); }
 ok('alignment is fast', (Date.now() - t0) / 3 < 400, { ms: Math.round((Date.now() - t0) / 3) });
+
+// ---------------- Story mode: the burned-in caption is exactly the voiced text ----------------
+{
+  const H = require('./story-harness'); const V = H.load(); const S = V.story; const D = V.storyDraw; const A = V.storyAudio;
+  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'story-plan.json'), 'utf8'));
+  const input = raw.input || { storyline: 'She finds a note on her coffee cup that says "Don\'t turn around"', beats: 8 };
+  // the story-sample-1 bug: CAPTION and narration written separately by the model
+  const bad = JSON.parse(JSON.stringify(raw)); bad.narrator = Object.assign({}, bad.narrator, { use: true });
+  bad.panels[0].narration = 'A quiet morning at the local cafe.'; bad.panels[0].caption = 'Just another ordinary morning coffee run.';
+  const dl = bad.panels.findIndex((pn, i) => i > 0 && i < bad.panels.length - 2 && pn.dialogue); if (dl > 0) { bad.panels[dl].narration = ''; bad.panels[dl].caption = 'A strange message left behind.'; }
+  const plan = S.validate(bad, input).plan;
+  ok('story: panel caption == narration when the narrator reads it (one source of truth)', plan.panels[0].caption === plan.panels[0].narration && plan.panels[0].caption === 'A quiet morning at the local cafe.', plan.panels[0].caption);
+  ok('story: a panel where only a character speaks has no separate caption (the line is the caption)', dl < 0 || plan.panels[dl].caption === '', dl > 0 && plan.panels[dl].caption);
+  ok('story: captionMismatches() is empty after validate, and catches a hand-edited mismatch', S.captionMismatches(plan).length === 0 && S.captionMismatches(Object.assign({}, plan, { panels: plan.panels.map((pn, i) => (i ? pn : Object.assign({}, pn, { caption: 'something else' }))) })).length === 1);
+  ok('story: refresh() of an old saved plan syncs it without Gemini', (() => { const old = JSON.parse(JSON.stringify(plan)); old.panels[0].caption = 'Just another ordinary morning coffee run.'; S.refresh(old); return old.panels[0].caption === old.panels[0].narration; })());
+  // renderer: place stand-in lines (silent buffers of plausible length), draw every frame, compare on-screen text with the voiced line
+  const lines = S.voiceLines(plan).map((l) => Object.assign({}, l, { x: new Float32Array(Math.round((0.5 + 0.32 * l.text.split(/\s+/).length) * A.RATE)) })).map((l) => Object.assign(l, { dur: l.x.length / A.RATE }));
+  const { tm, lines: placed } = A.placeLines(plan, lines, S);
+  const cv = H.canvas(); const r = new D.StoryRenderer(cv).setup(plan, { timing: tm, lines: placed });
+  let issues = []; let checked = 0;
+  for (let f = 0; f < Math.ceil(tm.total * 24); f++) { const L = r.draw(f / 24); const cc = D.captionCheck(L, placed); issues = issues.concat(cc); if (placed.some((l) => L.t >= l.start + 0.05 && L.t <= l.start + l.dur - 0.05)) checked++; }
+  ok('story: every frame while a line is voiced shows exactly that line and nothing else', !issues.length && checked > 24, { issues: issues.slice(0, 3), checked });
+  const mid = placed.map((l) => { const L = r.draw(l.start + l.dur / 2); return L.text.filter((q) => q.kind === 'caption' || q.kind === 'dialogue').map((q) => q.drawn); });
+  ok('story: mid-line frames read the voiced text word for word', placed.every((l, k) => mid[k].length === 1 && mid[k][0] === l.text), placed.map((l, k) => [l.text, mid[k]]));
+  // long narration is never truncated on screen (it shrinks / wraps instead)
+  const long = JSON.parse(JSON.stringify(plan)); long.panels[0].narration = 'Every single morning she orders the very same tiny oat latte.'; S.syncCaptions(long);
+  const ll = S.voiceLines(long).filter((l) => l.panel === 0 && l.who === 'narrator').map((l) => Object.assign({}, l, { x: new Float32Array(3 * A.RATE), dur: 3 }));
+  const pl2 = A.placeLines(long, ll, S); const r2 = new D.StoryRenderer(H.canvas()).setup(long, { timing: pl2.tm, lines: pl2.lines }); const L2 = r2.draw(pl2.lines[0].start + 1);
+  ok('story: a long voiced caption is drawn in full (no dropped words)', L2.text.some((q) => q.kind === 'caption' && q.drawn === long.panels[0].narration), L2.text.map((q) => q.drawn));
+  // negative control: the old behaviour (separate caption under the narration) is flagged by the check
+  const fake = { t: placed[0].start + 0.5, faces: [], text: [{ kind: 'caption', who: 'narrator', drawn: 'Just another ordinary morning coffee run.' }] };
+  ok('story: captionCheck flags a caption that differs from the voiced line', D.captionCheck(fake, [Object.assign({}, placed[0], { who: 'narrator', text: 'A quiet morning at the local cafe.' })]).length > 0);
+}
 console.log(pass + '/' + (pass + fail) + ' passed'); process.exit(fail ? 1 : 0);

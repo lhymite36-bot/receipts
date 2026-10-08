@@ -42,5 +42,47 @@ let pass = 0; let fail = 0; const ok = (name, c, v) => { if (c) pass++; else fai
   const segs = A.splitTake(take, 3, [2, 4, 1]); ok('splitTake finds 3 lines at the pauses', segs && segs.length === 3 && Math.abs(segs[1].length / R - 1.47) < 0.15, segs && segs.map((s) => (s.length / R).toFixed(2)));
   const q = A.castQa([{ who: 'a', voice: 'X', panel: 0, x: tone(120, 1.2, 2.5), delivery: 'light' }, { who: 'b', voice: 'Y', panel: 1, x: tone(125, 1.2, 2.5), delivery: 'light' }], ['gemini-3.8-flash-lite-tts']);
   ok('cast QA refuses near-identical voices and a flat model', !q.checks[0].ok && !q.checks[1].ok);
+
+  // ---------------- pose library (no T-pose; ACTION / BOARD NOTES -> pose; props on the hand) ----------------
+  const H = require('./story-harness'); const V = H.load();
+  const two = { characters: [{ id: 'maya', name: 'Maya' }, { id: 'leo', name: 'Leo' }] };
+  const pose = (action, boardNotes, sc, extra) => S.poseFor(two, Object.assign({ action, boardNotes, stage: Object.assign({ chars: [Object.assign({ id: 'maya', pose: 'stand', facing: 'front' }, sc)], focus: 'maya', clue: { object: 'none' } }, extra || {}) }), Object.assign({ id: 'maya', pose: 'stand', facing: 'front' }, sc));
+  const cases = [
+    ['Maya lifts her ceramic coffee mug from the counter.', 'Maya smiling, holding cup. Leo in background far right.', {}, 'cup', 'cup'],
+    ['Maya unfolds the note, her smile dropping.', '', {}, 'reading', 'note'],
+    ['Maya freezes completely, breath held.', 'Knuckles white on the cup. Absolute silence.', { pose: 'freeze' }, 'grip-cup', 'cup'],
+    ['A long shadow creeps across the floor toward Maya.', "Maya's back is tense.", { facing: 'back', pose: 'freeze' }, 'back', null],
+    ['Maya whips around to face whatever is there.', '', { pose: 'turn' }, 'startled', null],
+    ['Maya waves at Leo across the room.', '', {}, 'wave', null], ['Maya shrugs.', '', {}, 'shrug', null], ['Maya stands with hands on her hips.', '', {}, 'hips', null],
+    ['Maya points at the door.', '', {}, 'point', null], ['Maya presses a hand to her chest.', '', {}, 'hand-chest', null], ['Maya checks her phone.', '', {}, 'phone', 'phone'],
+    ['Camera pushes in on the note.', 'Focus entirely on the cup lid.', { pose: 'freeze' }, 'tense', null], ['Maya waits.', '', { pose: 'stand' }, 'idle', null], ['Leo grins.', '', { pose: 'whatever' }, 'idle', null],
+  ];
+  const got = cases.map(([a, b, sc, want, holds]) => { const r = pose(a, b, sc); return { a, want, holds, got: r.arms, gotHolds: r.holds }; });
+  ok('poses: ACTION / BOARD NOTES map to the pose library (cup, reading, grip, from behind, startled, wave, shrug, hips, point, hand to chest, phone; default idle)', got.every((g) => g.got === g.want && (g.holds === null ? !g.gotHolds : g.gotHolds === g.holds)), got.filter((g) => g.got !== g.want || (g.holds || null) !== (g.gotHolds || null)));
+  ok('poses: a sentence about Leo does not pose Maya', pose('Leo waves hello.', '', {}).arms === 'idle');
+  ok('poses: every figure of a validated plan gets a library pose', P.every((pn) => (pn.stage.chars || []).every((c) => S.ARM_POSES.includes(c.arms))));
+  const PA = V.storyDraw.POSE_ARMS; const isT = (q) => { const dx = Math.abs(q[1][0] - 16); const dy = Math.abs(q[1][1] - 18); return dx > 70 && dy < 0.45 * dx; };
+  ok('poses: the library has every requested pose and none is a T-pose (both arms straight out)', ['idle', 'hips', 'cup', 'reading', 'point', 'shrug', 'startled', 'hand-chest', 'wave', 'back'].every((k) => PA[k]) && S.ARM_POSES.every((k) => PA[k] && !(isT(PA[k].f) && isT(PA[k].a || PA[k].f))), Object.keys(PA));
+  ok('poses: default is relaxed arms down (hands below the hips, close to the body)', PA.idle.f[1][1] > 110 && Math.abs(PA.idle.f[1][0]) < 50);
+  // draw the fixture plan with a sample-1 style staging (freeze / hold / cup clue) at many times: no T-pose, held props on the hand
+  const stage = JSON.parse(JSON.stringify(plan)); const lead = stage.characters[0];
+  stage.panels.forEach((pn, i) => { const c = (pn.stage.chars || []).find((q) => q.id === lead.id); if (!c) return; if (i % 3 === 0) { c.pose = 'freeze'; pn.boardNotes = `${lead.name} grips the cup with both hands.`; pn.stage.clue = { object: 'cup', state: 'partial', x: 'center', label: '' }; } else if (i % 3 === 1) { c.pose = 'hold'; pn.action = `${lead.name} lifts her coffee cup.`; } else { c.pose = 'freeze'; } });
+  S.mapPoses(stage); const tm3 = S.timing(stage); const r3 = new V.storyDraw.StoryRenderer(H.canvas()).setup(stage, { timing: tm3 });
+  let pIss = []; let heldN = 0; let floating = 0; const armsSeen = new Set();
+  for (let f = 0; f < Math.ceil(tm3.endCard.start * 24); f += 3) { const L = r3.draw(f / 24); pIss = pIss.concat(V.storyDraw.poseCheck(L)); (L.figures || []).forEach((g) => { armsSeen.add(g.arms); if (g.held) heldN++; }); if (L.clue && !['hand', 'counter', 'table', 'floor'].includes(L.clue.on)) floating++; }
+  ok('poses: no T-pose and every held prop on its hand anchor, every 3rd frame of the whole story', !pIss.length && heldN > 0, { issues: pIss.slice(0, 3), heldN, arms: [...armsSeen] });
+  ok('props: a clue the character holds is drawn at the hand; others rest on a counter / table / floor', !floating);
+  // ---------------- audio: de-esser, music bed vs its own reference ----------------
+  const QA = require('../pipeline/audio-qa.js');
+  const hiss = new Float32Array(R * 1.2); for (let i = 0; i < hiss.length; i++) { const tt = i / R; const sib = tt > 0.5 && tt < 0.62; hiss[i] = 0.25 * Math.sin(2 * Math.PI * 180 * tt) * (sib ? 0.2 : 1) + (sib ? (i % 2 ? 0.8 : -0.8) * (0.7 + 0.3 * Math.random()) : 0); }
+  const harshBefore = QA.scan(hiss, R).events.filter((e) => e.kind === 'harsh').length; const de = A.deEss(hiss, R); const harshAfter = QA.scan(de.x, R).events.filter((e) => e.kind === 'harsh').length;
+  ok('de-esser removes a harsh "s" (audio-qa harsh event) without touching the vowel', harshBefore > 0 && harshAfter === 0 && Math.abs(de.x[Math.round(0.2 * R)] - hiss[Math.round(0.2 * R)]) < 1e-6, { harshBefore, harshAfter });
+  const AFX = V.audiofx; const bed = (style) => { const m = AFX.music(style, R); const n = R * 12; const x = new Float32Array(n); for (let i = 0; i < n; i++) x[i] = 0.2 * (m.L[i % m.loopLen] + m.R[i % m.loopLen]) * 0.5; return x; };
+  for (const style of ['storybook', 'chill']) {
+    const x = bed(style); const MA = QA.musicAware(AFX.musicPitches(style), R); const raw0 = QA.scan(x, R); const ms = MA.musicStem(QA.scan(x, R));
+    const beep = Float32Array.from(x); for (let i = Math.round(5 * R); i < Math.round(5.4 * R); i++) beep[i] += 0.3 * Math.sin(2 * Math.PI * 1109 * i / R); // C#6: not a note of either bed
+    const msBeep = MA.musicStem(QA.scan(beep, R)); const mix = MA.finalMix(QA.scan(beep, R), ms.tones);
+    ok(`music (${style}): the bed's sustained notes no longer fail (they are its own notes), an off-bed beep still does`, ms.ok && !msBeep.ok && !mix.ok && mix.fails.every((e) => Math.abs(e.t - 5) < 0.5), { plainScanFails: raw0.fails.length, bedTones: ms.tones.length, offBed: msBeep.offBed.map((e) => e.hz), mixFails: mix.fails.map((e) => [e.kind, e.t, e.hz]) });
+  }
   console.log(`story-engine: ${pass}/${pass + fail} passed`); process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

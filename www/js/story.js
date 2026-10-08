@@ -20,6 +20,10 @@
   const HAIR = ['none', 'short', 'long', 'bun', 'ponytail', 'curly', 'spiky', 'bob', 'cap', 'beanie'];
   const ITEMS = ['scarf', 'glasses', 'cap', 'bag', 'headphones', 'bow', 'tie', 'watch', 'backpack', 'apron', 'necklace', 'flower', 'badge', 'umbrella', 'book', 'none'];
   const POSES = ['stand', 'sit', 'walk', 'reach', 'turn', 'hold', 'point', 'freeze', 'cheer', 'lean', 'hide'];
+  // Arm pose library the renderer draws (www/js/storydraw.js POSE_ARMS). Every figure gets one, mapped from the panel's ACTION and
+  // BOARD NOTES (poseFor). The default is 'idle' (arms relaxed down); there is no arms-straight-out (T) pose anywhere.
+  const ARM_POSES = ['idle', 'tense', 'hips', 'cup', 'grip-cup', 'reading', 'phone', 'point', 'shrug', 'startled', 'hand-chest', 'wave', 'cheer', 'reach', 'hide', 'sit', 'back'];
+  const HOLDABLE = { cup: 'cup', mug: 'cup', coffee: 'cup', latte: 'cup', tea: 'cup', note: 'note', paper: 'note', message: 'note', card: 'note', letter: 'letter', envelope: 'letter', phone: 'phone', book: 'book', photo: 'photo', picture: 'photo', ticket: 'ticket' };
   const EYES = ['neutral', 'wide', 'happy', 'worried', 'side', 'closed', 'sparkle'];
   const SYMBOLS = ['none', 'sweat', 'heart', 'question', 'sparkle', 'exclaim'];
   const CLUES = ['none', 'note', 'cup', 'phone', 'gift', 'letter', 'key', 'book', 'cake', 'flowers', 'photo', 'door', 'sign', 'balloon', 'ticket', 'ring', 'bag', 'umbrella', 'plant', 'kitten', 'puppy', 'banner', 'box', 'lamp', 'clock'];
@@ -83,7 +87,7 @@ CONSTRAINTS
  "suspensePlan": {"withheldQuestion": "", "knowledgeGap": "what the audience knows that a character does not, or the reverse", "devices": [{"device": "one of the devices", "beat": 2, "how": ""}]},
  "spine": {"hook": "", "pressure": "", "tighten": "", "withhold": "", "snap": ""},
  "spoilerWords": ["3-8 lowercase words that name the ANSWER to the withheld question (who/what it is); never words from the storyline, the setting or the setup"],
- "panels": [{"n": 1, "location": "location id", "shot": "wide|medium|close-up|insert|over-shoulder", "framing": "", "color": "palette use + whether the accent is allowed", "accentAllowed": false, "suspenseBeat": "device name, or release", "mood": "uneasy normal|false calm|rising|tense|peak|snap", "tension": 1, "spine": "hook|pressure|tighten|withhold|snap", "action": "one physical beat", "dialogue": {"speaker": "character id", "line": "max 8 words"} or null, "reply": null (snap panel only: optional {"speaker": "another character id", "line": "max 6 words"}), "delivery": "light|curious|nervous|whisper|tense|bright|warm", "narration": "max 10 words for the narrator, or empty", "effect": "tick|ding|hush|creak|gulp|none", "caption": "under 12 words, or empty", "duration": 3.0, "cameraMove": "hold|slow push-in|slight pan|snap cut", "boardNotes": "pose, tell, props, anchors, symbol, continuity", "hold": "the fact the viewer still does not have", "transitionShot": false,
+ "panels": [{"n": 1, "location": "location id", "shot": "wide|medium|close-up|insert|over-shoulder", "framing": "", "color": "palette use + whether the accent is allowed", "accentAllowed": false, "suspenseBeat": "device name, or release", "mood": "uneasy normal|false calm|rising|tense|peak|snap", "tension": 1, "spine": "hook|pressure|tighten|withhold|snap", "action": "one physical beat", "dialogue": {"speaker": "character id", "line": "max 8 words"} or null, "reply": null (snap panel only: optional {"speaker": "another character id", "line": "max 6 words"}), "delivery": "light|curious|nervous|whisper|tense|bright|warm", "narration": "max 10 words for the narrator, or empty", "effect": "tick|ding|hush|creak|gulp|none", "caption": "under 12 words, or empty; when the panel has narration the caption IS the narration, word for word; when a character speaks and there is no narration, leave it empty (the spoken line is burned in as the caption)", "duration": 3.0, "cameraMove": "hold|slow push-in|slight pan|snap cut", "boardNotes": "pose (arms: relaxed down, hands on hips, holding the cup, reading, pointing, shrug, startled, hand to chest, waving, seen from behind), tell, props, anchors, symbol, continuity", "hold": "the fact the viewer still does not have", "transitionShot": false,
    "stage": {"chars": [{"id": "character id", "x": "left|center|right", "facing": "left|right|front|back", "far": false, "pose": "${POSES.join('|')}", "eyes": "${EYES.join('|')}", "symbol": "${SYMBOLS.join('|')}"}], "focus": "character id or clue", "clue": {"object": "${CLUES.join('|')}", "label": "max 3 words written on it, or empty", "state": "hidden|partial|revealed", "x": "left|center|right"}, "anchorProps": ["which location anchors are visible"], "motion": "${MOTIONS.join('|')}"}}],
  "thumbnails": ["one line per panel"],
  "rhythm": {"falseCalm": [1], "silence": 6, "snap": 8, "note": ""},
@@ -93,7 +97,7 @@ CONSTRAINTS
  "social": {"seriesTitle": "under 6 words", "hookText": "max 8 words", "cliffhanger": "", "endCardLine": "", "hashtags": ["#a", "#b", "#c", "#d", "#e"], "caption": "under 2 sentences, no spoiler", "artDirection": "one sentence"}
 }
 Voice list (pick a distinct voice per character that fits gender, age, energy and personality, and keep it locked; the narrator is warm and different from every character): ${VOICE_LIST}.
-Rules for the JSON: panels.length equals the requested beats; characters appear only from the character lock (no one new mid-story, no extra people in "stage"); every locked character speaks at least one short line somewhere (each has a locked voice; the strongest suspense beat stays silent; the snap panel may carry an optional "reply": {"speaker","line"} by a second character); every locked character is already on screen in panel 1 or 2 (small, far, facing away or half hidden is fine: set "far": true or "facing": "back"), so the snap never introduces a new person; "tension" is 1-5 and rises one notch per middle beat (a false-calm beat may dip); the second-to-last panel is mood "peak" (the peak withhold), has dialogue null and narration empty, and is the silence beat (rhythm.silence); the last panel is mood "snap" with spine "snap", and its duration is shorter than every earlier panel; accentAllowed is true only on tension spikes (tension >= 3) and the snap; panel 1 is mood "uneasy normal"; a panel whose location differs from the previous one must have transitionShot true and shot "wide"; dialogue lines max 8 words, at most one line per panel; captions never contain a spoiler word before the snap; narration only on hook/caption-style panels, never on the silence beat; total duration of all panels 22.5-30.5 seconds (a 1.5 s end card is added for 24-32 s); the delivery of the withhold is "whisper" or "tense" and the snap is "bright".`;
+Rules for the JSON: panels.length equals the requested beats; characters appear only from the character lock (no one new mid-story, no extra people in "stage"); every locked character speaks at least one short line somewhere (each has a locked voice; the strongest suspense beat stays silent; the snap panel may carry an optional "reply": {"speaker","line"} by a second character); every locked character is already on screen in panel 1 or 2 (small, far, facing away or half hidden is fine: set "far": true or "facing": "back"), so the snap never introduces a new person; "tension" is 1-5 and rises one notch per middle beat (a false-calm beat may dip); the second-to-last panel is mood "peak" (the peak withhold), has dialogue null and narration empty, and is the silence beat (rhythm.silence); the last panel is mood "snap" with spine "snap", and its duration is shorter than every earlier panel; accentAllowed is true only on tension spikes (tension >= 3) and the snap; panel 1 is mood "uneasy normal"; a panel whose location differs from the previous one must have transitionShot true and shot "wide"; dialogue lines max 8 words, at most one line per panel; captions never contain a spoiler word before the snap; a voiced panel's caption is exactly its spoken text (caption = narration, or empty when only a character speaks); narration only on hook/caption-style panels, never on the silence beat; total duration of all panels 22.5-30.5 seconds (a 1.5 s end card is added for 24-32 s); the delivery of the withhold is "whisper" or "tense" and the snap is "bright".`;
 
   function buildPrompt(input) {
     const beats = [6, 8, 12].includes(Number(input.beats)) ? Number(input.beats) : 8;
@@ -293,6 +297,10 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
     for (const [k, v] of [['caption', so.caption], ['hookText', so.hookText], ['seriesTitle', so.seriesTitle], ['cliffhanger', so.cliffhanger]]) { const s = hasSpoiler(v); if (s) { if (k === 'caption' || k === 'cliffhanger') errors.push(`social.${k} spoils the snap ("${s}")`); else { so[k] = k === 'seriesTitle' ? 'The Little Mystery' : words(panels[0] && panels[0].action).slice(0, 6).join(' '); fixed.push(`social.${k} spoiled the snap - replaced`); } } }
     // voices: distinct, locked, fitting
     castVoices(p, fixed);
+    // one source of truth for on-screen text (after the narrator is settled): a voiced panel's caption is exactly its spoken text
+    syncCaptions(p, fixed);
+    // arm pose per figure from ACTION / BOARD NOTES (default relaxed arms down, never a T-pose)
+    mapPoses(p);
     // durations: total 24-32 s with the 1.5 s end card (timing() enforces the per-shot rules)
     const tm = timing(p); const total = tm.total;
     if (total < 24 - 1e-6 || total > 32 + 1e-6) warnings.push('total ' + total.toFixed(1) + ' s outside 24-32 s after timing');
@@ -306,6 +314,85 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
     p.timing = { total: +total.toFixed(2), endCard: tm.endCard, shots: tm.shots.map((s) => ({ panel: s.panel, start: +s.start.toFixed(2), dur: +s.dur.toFixed(2) })) };
     return { plan: p, errors, fixed, warnings };
   }
+
+  // ---------------- on-screen text = spoken text (one source of truth) ----------------
+  const narrated = (p, pn) => !!(p.narrator && p.narrator.use !== false && str(pn.narration) && !pn.silence);
+  // The caption of a voiced panel is the voiced text: the narration (when the narrator reads it), or nothing when only a character
+  // speaks (the character's line is the burned-in caption). Unvoiced panels keep their CAPTION. Idempotent; reports what it changed.
+  function syncCaptions(p, fixed) {
+    fixed = fixed || [];
+    (p.panels || []).forEach((pn, i) => {
+      if (narrated(p, pn)) {
+        if (words(pn.narration).length >= 12) { pn.narration = words(pn.narration).slice(0, 11).join(' ').replace(/[,;:]$/, ''); fixed.push(`panel ${i + 1}: narration cut to 11 words (it is also the caption)`); }
+        if (str(pn.caption) !== str(pn.narration)) { if (str(pn.caption)) pn.captionWas = pn.caption; fixed.push(`panel ${i + 1}: caption "${pn.caption || ''}" -> narration "${pn.narration}" (the caption is the spoken text)`); pn.caption = str(pn.narration); }
+      } else if ((pn.dialogue && str(pn.dialogue.line)) || (pn.reply && str(pn.reply.line))) {
+        if (str(pn.caption)) { pn.captionWas = pn.caption; fixed.push(`panel ${i + 1}: caption "${pn.caption}" removed (the spoken line is the burned-in caption)`); pn.caption = ''; }
+      }
+    });
+    (p.shots || []).forEach((sh, i) => { const pn = (p.panels || [])[i]; if (pn) sh.onScreenText = onScreenText(p, pn); });
+    return fixed;
+  }
+  function onScreenText(p, pn) {
+    const say = (d) => { const c = (p.characters || []).find((q) => q.id === d.speaker); return `${c ? c.name : d.speaker}: ${d.line}`; };
+    const t = [narrated(p, pn) ? pn.narration : '', pn.dialogue ? say(pn.dialogue) : '', pn.reply ? say(pn.reply) : ''].filter(Boolean);
+    return t.length ? t.join(' / ') + ' (spoken, burned in word for word)' : (pn.caption || 'none');
+  }
+  // every caption/voice mismatch in a plan (empty = in sync); used by tests and the pipeline's final QA
+  function captionMismatches(p) {
+    const out = [];
+    (p.panels || []).forEach((pn, i) => {
+      if (narrated(p, pn) && str(pn.caption) !== str(pn.narration)) out.push({ panel: i + 1, caption: pn.caption, voiced: pn.narration });
+      else if (!narrated(p, pn) && ((pn.dialogue && str(pn.dialogue.line)) || (pn.reply && str(pn.reply.line))) && str(pn.caption)) out.push({ panel: i + 1, caption: pn.caption, voiced: [pn.dialogue && pn.dialogue.line, pn.reply && pn.reply.line].filter(Boolean).join(' / ') });
+    });
+    return out;
+  }
+
+  // ---------------- pose library mapping ----------------
+  // Which arm pose (ARM_POSES) a figure takes in a panel, and what it holds, from the panel's ACTION + BOARD NOTES: sentences that
+  // name this character, plus unnamed sentences when the character is the panel's focus (or the only one in front). Falls back
+  // to the stage pose label; anything unknown is 'idle' (relaxed arms down).
+  function poseFor(p, pn, sc) {
+    const chars = p.characters || []; const c = chars.find((q) => q.id === sc.id); const name = lc(c && c.name);
+    const others = chars.filter((q) => q.id !== sc.id).map((q) => lc(q.name)).filter(Boolean);
+    const front = ((pn.stage && pn.stage.chars) || []).filter((q) => !q.far);
+    const lead = (pn.stage && pn.stage.focus === sc.id) || (front.length === 1 && front[0].id === sc.id);
+    const sents = lc(str(pn.action) + '. ' + str(pn.boardNotes)).split(/(?<=[.!?;])\s+|\.\s*/).map((x) => x.trim()).filter(Boolean);
+    const has = (s, n) => n && new RegExp('\\b' + n.replace(/[^a-z0-9 ]/g, '') + '\\b').test(s);
+    const mine = sents.filter((s) => has(s, name) || (lead && !others.some((o) => has(s, o)) && !has(s, name) && !/\b(camera|frame|shot|lettering|focus entirely)\b/.test(s)));
+    const t = ' ' + mine.join('. ') + ' ';
+    const clue = (pn.stage && pn.stage.clue) || {};
+    const objIn = (s) => { const m = /\b(cup|mug|coffee|latte|tea|note|paper|message|card|letter|envelope|phone|book|photo|picture|ticket)s?\b/.exec(s); return m ? HOLDABLE[m[1]] : null; };
+    const r = (arms, holds) => ({ arms, holds: holds || null });
+    if (sc.pose === 'sit') return r('sit');
+    if (sc.pose === 'hide') return r('hide');
+    if (sc.facing === 'back') return r('back');
+    if (/\bwav(e|es|ing)\b(?! of)/.test(t)) return r('wave');
+    if (/\bshrug/.test(t)) return r('shrug');
+    if (/\bhands? on (her |his |their )?hips\b/.test(t)) return r('hips');
+    if (/\b(hand|hands|palm)s? (to|on|over|pressed to) (her |his |their )?(chest|heart)\b|\bclutch(es|ing)? (her |his |their )?(chest|heart)\b/.test(t)) return r('hand-chest');
+    if (/\bpoint(s|ing|ed)?\b/.test(t)) return r('point');
+    if (/\b(read|reads|reading|unfold|unfolds|unfolding|opens?|opening|stares? at|studies)\b[^.]*\b(note|letter|paper|message|card|envelope)\b|\b(note|letter|paper) in (her|his|their) hands?\b/.test(t)) { const o = objIn(t.slice(t.search(/\b(note|letter|paper|message|card|envelope)\b/))) || 'note'; return r('reading', o === 'letter' ? 'letter' : 'note'); }
+    if (/\b(knuckles|grip|grips|gripping|clutch|clutches|clutching|both hands)\b/.test(t) && /\b(cup|mug|coffee|latte|tea)\b/.test(t)) return r('grip-cup', 'cup');
+    if (/\b(hold|holds|holding|held|lift|lifts|lifting|sip|sips|sipping|carr(y|ies|ying)|raises?|raising|picks? up)\b[^.]*\b(cup|mug|coffee|latte|tea)\b|\b(cup|mug) in (her|his|their) hand\b/.test(t)) return r('cup', 'cup');
+    if (/\b(hold|holds|holding|checks?|checking|looks? at|scroll(s|ing)?)\b[^.]*\bphone\b/.test(t)) return r('phone', 'phone');
+    if (/\b(startl|gasp|whips? around|spins? around|jumps?|jumped|shock|recoil|flinch)/.test(t)) return r('startled');
+    if (/\b(cheer|cheers|celebrat|arms up|hooray|throws? (her|his|their) arms)/.test(t)) return r('cheer');
+    if (/\breach(es|ing)?\b/.test(t)) return r('reach');
+    if (/\b(freez|frozen|stiff|tense|holds? (her|his|their) breath|breath held)/.test(t)) return r('tense');
+    // stage label fallback (the old 'freeze' arms-out pose is gone: freeze = tense, arms down)
+    const held = HOLDABLE[clue.object] || null;
+    switch (sc.pose) {
+      case 'cheer': return r('cheer');
+      case 'point': return r('point');
+      case 'reach': return r('reach');
+      case 'freeze': return r('tense');
+      case 'hold': return held === 'note' || held === 'letter' || held === 'photo' || held === 'book' || held === 'ticket' ? r('reading', held) : held === 'phone' ? r('phone', 'phone') : r('cup', 'cup');
+      default: return r('idle');
+    }
+  }
+  function mapPoses(p) { (p.panels || []).forEach((pn) => ((pn.stage && pn.stage.chars) || []).forEach((sc) => { const m = poseFor(p, pn, sc); sc.arms = m.arms; sc.holds = m.holds; })); return p; }
+  // a saved plan (older engine) brought up to date without a new Gemini call: captions synced, poses mapped, shot list text
+  function refresh(p) { const fixed = syncCaptions(p, []); mapPoses(p); return fixed; }
   function hashStr(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
   function friendlyHair(hex) { const c = hsl(hex); return !(c.h >= 15 && c.h <= 50 && c.l < 0.4 && c.s < 0.6 && c.s > 0.05) || c.l < 0.2; }
   function hslHex(h, s2, l) { const a = s2 * Math.min(l, 1 - l); const f = (n) => { const k = (n + h / 30) % 12; const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); return Math.round(255 * c).toString(16).padStart(2, '0'); }; return '#' + f(0) + f(8) + f(4); }
@@ -379,7 +466,7 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
       return { n: pn.n, panel: pn.n, startFrame: `still from panel ${pn.n}`, endFrame: last ? 'held pose on the snap' : `still from panel ${pn.n + 1}`, duration: +tm.shots[i].dur.toFixed(2),
         move: pn.silence ? 'hold' : last ? 'snap cut' : pn.cameraMove, actionInMotion: str(g.actionInMotion) || motionText(pn.stage.motion), doNotMove: 'face design, clothing colors, signature items, anchors',
         suspenseTiming: str(g.suspenseTiming) || (pn.silence ? 'held pose, the clue almost shows' : pn.hold ? 'the moment before: ' + pn.hold : ''), audioCue: audio,
-        onScreenText: pn.caption || 'none', transition: last ? 'dip to accent' : (closest(g.transition, TRANSITIONS, 'cut') === 'dip to accent' ? 'cut' : closest(g.transition, TRANSITIONS, 'cut')) };
+        onScreenText: onScreenText(p, pn), transition: last ? 'dip to accent' : (closest(g.transition, TRANSITIONS, 'cut') === 'dip to accent' ? 'cut' : closest(g.transition, TRANSITIONS, 'cut')) };
     });
   }
   function motionText(m) { return { 'head-turn': 'head turn', reach: 'reach', door: 'door', 'phone-light': 'phone light', step: 'one small step', lean: 'lean in', 'look-up': 'look up', jump: 'little hop', 'hand-enter': 'hand entering frame', blink: 'blink', none: 'breathing only' }[m] || 'breathing only'; }
@@ -456,7 +543,7 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
     L.push('', `Rhythm: false calm ${(p.rhythm.falseCalm || []).join(', ') || '-'}; silence ${p.rhythm.silence}; snap ${p.rhythm.snap}. ${p.rhythm.note || ''}`, `Pause points: ${p.pausePoints.join(', ')}`, '');
     L.push('## 8. Full panels');
     p.panels.forEach((pn) => L.push(`### PANEL ${pn.n} — ${pn.location}`, `- SHOT: ${pn.shot}${pn.transitionShot ? ' (transition shot)' : ''}`, `- FRAMING: ${pn.framing}`, `- COLOR: ${pn.color || ''} (accent ${pn.accentAllowed ? 'allowed' : 'not allowed'})`, `- SUSPENSE BEAT: ${pn.suspenseBeat} (${pn.mood}, tension ${pn.tension}/5)`, `- ACTION: ${pn.action}`,
-      `- DIALOGUE: ${pn.dialogue ? name(pn.dialogue.speaker) + ': "' + pn.dialogue.line + '"' + (pn.reply ? ' / ' + name(pn.reply.speaker) + ': "' + pn.reply.line + '"' : '') + ' (' + pn.delivery + ')' : 'NONE'}`, pn.narration ? `- NARRATOR: "${pn.narration}"` : '', `- EFFECT: ${pn.effect}`, `- CAPTION: ${pn.caption || 'none'}`, `- DURATION: ${pn.duration} s${pn.n === n - 1 ? ' (incl. +0.5 s peak hold)' : ''}`, `- CAMERA MOVE: ${pn.cameraMove}`, `- BOARD NOTES: ${pn.boardNotes || ''}`, `- HOLD: ${pn.hold || ''}`, ''));
+      `- DIALOGUE: ${pn.dialogue ? name(pn.dialogue.speaker) + ': "' + pn.dialogue.line + '"' + (pn.reply ? ' / ' + name(pn.reply.speaker) + ': "' + pn.reply.line + '"' : '') + ' (' + pn.delivery + ')' : 'NONE'}`, pn.narration ? `- NARRATOR: "${pn.narration}"` : '', `- EFFECT: ${pn.effect}`, `- CAPTION: ${pn.caption || (pn.dialogue || pn.reply ? 'the spoken line (burned in word for word)' : 'none')}`, `- DURATION: ${pn.duration} s${pn.n === n - 1 ? ' (incl. +0.5 s peak hold)' : ''}`, `- CAMERA MOVE: ${pn.cameraMove}`, `- BOARD NOTES: ${pn.boardNotes || ''}${(pn.stage.chars || []).length ? ' [poses: ' + pn.stage.chars.map((c) => name(c.id) + ' ' + (c.arms || 'idle') + (c.holds ? ' + ' + c.holds : '')).join(', ') + ']' : ''}`, `- HOLD: ${pn.hold || ''}`, ''));
     L.push('## 9. Still image prompts'); p.stillPrompts.forEach((s, i) => L.push(`${i + 1}. ${s}`)); L.push('');
     L.push('## 10. Video shot list and assembly'); p.shots.forEach((s) => L.push(`### SHOT ${s.n} — panel ${s.panel}`, `- START FRAME: ${s.startFrame}`, `- END FRAME: ${s.endFrame}`, `- DURATION: ${s.duration} s`, `- MOVE: ${s.move}`, `- ACTION IN MOTION: ${s.actionInMotion}`, `- DO NOT MOVE: ${s.doNotMove}`, `- SUSPENSE TIMING: ${s.suspenseTiming}`, `- AUDIO CUE: ${s.audioCue}`, `- ON-SCREEN TEXT: ${s.onScreenText}`, `- TRANSITION: ${s.transition}`, ''));
     L.push('Assembly rules:'); p.assembly.forEach((a) => L.push(`- ${a}`)); L.push('');
@@ -484,8 +571,8 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
     return `Say it ${kid}as ${c.name}, ${lc(c.personality).replace(/\.$/, '')}: ${d}`;
   }
 
-  const api = { LOCATIONS, FEATURES, DEVICES, SHOTS, MOVES, EFFECTS, SPINE, MOODS, PLATFORMS, TONES, HAIR, ITEMS, POSES, EYES, SYMBOLS, CLUES, MOTIONS, DELIVERY, VOICES, NICE_PALETTES, END_CARD, LINE_LEAD, LINE_TAIL,
-    SPEC, buildPrompt, validate, generate, parseJson, timing, toMarkdown, socialCaption, voiceLines, styleFor, stillPrompt, castVoices, friendlyColor, shade, deepen, hsl, defaultAnchors, closest };
+  const api = { LOCATIONS, FEATURES, DEVICES, SHOTS, MOVES, EFFECTS, SPINE, MOODS, PLATFORMS, TONES, HAIR, ITEMS, POSES, ARM_POSES, EYES, SYMBOLS, CLUES, MOTIONS, DELIVERY, VOICES, NICE_PALETTES, END_CARD, LINE_LEAD, LINE_TAIL,
+    SPEC, buildPrompt, validate, generate, syncCaptions, captionMismatches, onScreenText, poseFor, mapPoses, refresh, parseJson, timing, toMarkdown, socialCaption, voiceLines, styleFor, stillPrompt, castVoices, friendlyColor, shade, deepen, hsl, defaultAnchors, closest };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) { root.VTS = root.VTS || {}; root.VTS.story = api; }
 }(typeof window !== 'undefined' ? window : null));

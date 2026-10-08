@@ -63,7 +63,20 @@ function scan(x, rate, opts) {
   const fails = ev.filter((e) => !(e.kind === 'tone' && e.allowed));  // harsh noise fails even inside an effect window
   return { ok: !fails.length, refDb: +(20 * Math.log10(ref)).toFixed(1), events: ev, fails };
 }
-module.exports = { scan, decode, RATE };
+// Music-aware classification for Story renders. pcs = pitch classes the bed plays (audiofx.musicPitches(style)).
+//  bedNote(hz): a sustained tone is one of the bed's notes (nearest semitones, within one FFT bin or 3%)
+//  musicStem(scanOfMusicStem): the bed tested against its own reference -> { ok, tones, offBed } (tones must be bed notes; any
+//            burst / click / harsh / clip in the bed fails)
+//  finalMix(scanOfMix, musicTones): a tone in the final mix passes only inside an effect window or when the same note (time
+//            overlap, hz within 2 bins or 3%) is in the music stem; everything else keeps failing. Mutates + returns the scan.
+function musicAware(pcs, rate) {
+  rate = rate || RATE; const bin = rate / 2048;
+  const bedNote = (hz) => { if (!(hz > 0)) return false; const mi = 69 + 12 * Math.log2(hz / 440); for (let m = Math.round(mi) - 2; m <= Math.round(mi) + 2; m++) { if (!pcs.includes(((m % 12) + 12) % 12)) continue; const f = 440 * Math.pow(2, (m - 69) / 12); if (Math.abs(f - hz) <= Math.max(bin, f * 0.03)) return true; } return false; };
+  const musicStem = (ms) => { const tones = ms.events.filter((e) => e.kind === 'tone'); tones.forEach((e) => { e.bedNote = bedNote(e.hz); }); const offBed = ms.events.filter((e) => (e.kind === 'tone' ? !e.bedNote : true)); return { ok: !offBed.length, tones, offBed }; };
+  const finalMix = (sc, mtones) => { sc.events.forEach((e) => { if (e.kind === 'tone' && !e.allowed) { const hit = (mtones || []).find((m) => m.bedNote && m.t < e.t + e.dur + 0.1 && m.t + m.dur > e.t - 0.1 && Math.abs(m.hz - e.hz) <= Math.max(2 * bin, e.hz * 0.03)); if (hit) e.music = true; } }); sc.fails = sc.events.filter((e) => !(e.kind === 'tone' && (e.allowed || e.music))); sc.ok = !sc.fails.length; return sc; };
+  return { bedNote, musicStem, finalMix };
+}
+module.exports = { scan, decode, musicAware, RATE };
 if (require.main === module) {
   const args = process.argv.slice(2); const file = args.find((a) => !a.startsWith('--') && !/^[\d.,-]+$/.test(a));
   const ai = args.indexOf('--allow'); const allow = ai >= 0 && args[ai + 1] ? args[ai + 1].split(',').filter(Boolean).map((p) => p.split('-').map(Number)) : [];

@@ -135,5 +135,26 @@ Exit 4 = TTS daily quota exhausted on every allowed model: the render is queued 
 (nothing silent or flat is rendered); re-run the command in the queue file after the reset (05:30 IST).
 QA: format/duration, hard silence on the silence beat (< -55 dBFS), audio-qa (bursts/tones/clicks/harsh/clip), per-character
 pitch/timbre distinctness measured on the MP4, no captions over faces (every frame), music under voice.
-Offline checks: `node tests/story-engine.js`; frame stills: `node tests/live/story-stills.js <plan.json> <out-prefix>`.
+Re-takes and previews (a saved plan is reused and brought up to date: captions re-synced to the spoken text, poses re-mapped):
+
+    # fresh TTS takes for Maya and Leo only (everyone else from the take cache; replaced takes kept in <out>.takes/replaced/)
+    node pipeline/story-render.js --out /workspace/receipts-pipeline/samples/story-sample-1 --stills --retake maya,leo --voice leo=Enceladus
+    # no TTS at all: cached takes, stand-in voices for anything missing (preview, never posted)
+    node pipeline/story-render.js --offline --plan <saved.plan.json> --takes <saved.takes> --out <preview-prefix>
+
+`--retake` takes ids or names (`all`, `narrator` too); a quota stop queues the rerun with only the characters not yet re-taken.
+
+Story QA (in `<out>.qa.json`, every frame / every stem):
+- **Captions = spoken text.** One source of truth: a narrated panel's CAPTION is its narration, a panel where only a character speaks
+  has no separate caption (the line is burned in). While a line plays, the on-screen text must be exactly that line and nothing else
+  (`storyDraw.captionCheck`); the plan is checked too (`story.captionMismatches`). `<out>.captions.png` shows one frame per voiced line.
+- **Poses.** Figures use the pose library (`storydraw.js POSE_ARMS`: idle, tense, hips, cup, grip-cup, reading, phone, point, shrug,
+  startled, hand-chest, wave, cheer, reach, hide, sit, back) mapped from ACTION / BOARD NOTES (`story.poseFor`); default relaxed arms
+  down, no T-pose. Held props are drawn at the hand anchor; QA fails on a T-pose or a prop more than 2 px off its hand.
+- **Audio per stem.** Voice + effects stem: strict audio-qa (tones only in effect windows). Music bed stem: tested against its own notes
+  (`audiofx.musicPitches`; any burst / click / hiss / clipping fails). Final mix: a sustained tone passes only inside an effect window
+  or when the same note is in the music stem. Music must play under every non-silent shot and drop to hard silence on the silence beat.
+  Voice lines get a light de-esser (`storyAudio.deEss`) so a bright "s" no longer trips the harsh-noise check.
+
+Offline checks: `node tests/story-engine.js`, `node tests/caption-sync.js`; frame stills: `node tests/live/story-stills.js <plan.json> <out-prefix>`.
 No workflow runs Story mode (by design).

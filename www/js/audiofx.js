@@ -143,6 +143,11 @@
     return { L, R, loopLen: N, bpm: S.bpm };
   }
 
+  // The bed's own reference: which pitches a style plays (chord tones in every octave, the bass fifth, and the 3rd harmonic of each).
+  // Story QA accepts a sustained tone in the music stem only when it is one of these notes.
+  function musicPitches(style) { const S = STYLES[style] || STYLES.quirky; const pcs = new Set(); S.prog.forEach((ch) => ch.forEach((m) => { pcs.add(((m % 12) + 12) % 12); pcs.add((((m + 7) % 12) + 12) % 12); })); return [...pcs].sort((a, b) => a - b); }
+  function isBedNote(style, hz, tolHz) { if (!(hz > 0)) return false; const pcs = musicPitches(style); const midi = 69 + 12 * Math.log2(hz / 440); const near = Math.round(midi); for (let d = -2; d <= 2; d++) { const m = near + d; if (!pcs.includes(((m % 12) + 12) % 12)) continue; const f = 440 * Math.pow(2, (m - 69) / 12); if (Math.abs(f - hz) <= Math.max(tolHz || 0, f * 0.03)) return true; } return false; }
+
   // ---------- loading bundled files ----------
   const cache = { files: new Map(), synth: new Map(), music: new Map() };
   async function loadFile(name) {
@@ -224,5 +229,5 @@
     return out;
   }
 
-  VTS.audiofx = { SFX, SFX_IDS, MUSIC, STYLES, synth, music, mix, voiceActivity, sample, loadFile };
+  VTS.audiofx = { SFX, SFX_IDS, MUSIC, STYLES, synth, music, musicPitches, isBedNote, mix, voiceActivity, sample, loadFile };
 }());

@@ -138,6 +138,37 @@
   // ---------------- the stick figure (locked look) ----------------
   // c: locked character; st: stage entry; o: { t, k (tell 0..1), motion, mp (motion progress 0..1), P, accent, back }
   const HR = 58; const NECK = 26; const TORSO = 150; const LEG = 152; const ARM = 118;
+  // POSE LIBRARY: [elbow, hand] offsets from the neck point for the arm on the facing side (f) and the other arm (a; same as f when
+  // omitted); x is outward for that arm's side. Upper arm + forearm ~ ARM. 'idle' (relaxed, arms down) is the default; there is no
+  // arms-straight-out (T) pose: 'freeze' maps to 'tense' (arms stiff at the sides).
+  const POSE_ARMS = {
+    idle: { f: [[34, 74], [40, 130]] },
+    tense: { f: [[28, 76], [30, 134]] },
+    back: { f: [[30, 74], [34, 130]] },
+    hips: { f: [[66, 66], [30, 118]] },
+    cup: { f: [[40, 78], [84, 66]], a: [[34, 74], [40, 130]] },
+    'grip-cup': { f: [[42, 86], [17, 72]] },
+    reading: { f: [[42, 86], [22, 66]] },
+    phone: { f: [[38, 80], [60, 40]], a: [[34, 74], [40, 130]] },
+    point: { f: [[62, 40], [118, 14]], a: [[34, 74], [40, 130]] },
+    shrug: { f: [[42, 66], [66, 36]] },
+    startled: { f: [[52, 62], [58, 0]] },
+    'hand-chest': { f: [[44, 80], [4, 58]], a: [[34, 74], [40, 130]] },
+    wave: { f: [[66, 6], [80, -52]], a: [[34, 74], [40, 130]] },
+    cheer: { f: [[54, -20], [72, -78]] },
+    reach: { f: [[60, 54], [116, 60]], a: [[34, 74], [40, 130]] },
+    hide: { f: [[48, 30], [14, -74]] },
+    sit: { f: [[34, 74], [62, 124]] },
+  };
+  // a held prop at the hand anchor; returns the prop's grip point (must coincide with the hand anchor: checked by final QA)
+  const CUP_S = 0.62; const NOTE_S = 0.5;
+  function drawHeld(ctx, held, at, fwd, o, P, t) {
+    const [ax, ay] = at; const k = held.kind;
+    if (k === 'cup') { cup(ctx, ax, ay + 49 * CUP_S, CUP_S, P, held.accent ? P.A : P.prop); if (held.label) { ctx.save(); ctx.translate(ax, ay - 40 * CUP_S); ctx.rotate(-0.08); box(ctx, -38, -22, 76, 40, '#FFF4B8', 6); fitText(ctx, held.label, 0, -2, 66, 18, held.accent ? P.A : INK); ctx.restore(); } const base = ay + 49 * CUP_S; return [ax, base - 49 * CUP_S]; }
+    if (k === 'phone') { box(ctx, ax - 18, ay - 44, 36, 58, INK, 7); const gl = 0.5 + 0.5 * Math.sin((t || 0) * 6); box(ctx, ax - 12, ay - 38, 24, 40, o.motion === 'phone-light' ? mix(o.accent ? P.A : tint(P.S, 0.5), '#FFFFFF', gl * 0.4) : tint(P.S, 0.6), 4); return [ax, ay]; }
+    // paper-like clues (note, letter, photo, ticket, book): held from below with both hands, label facing the camera
+    clueObject(ctx, k, ax, ay + 12, NOTE_S, P, !!held.accent, held.label || '', t); return [ax, ay];
+  }
   function figure(ctx, c, st, x, o) {
     const P = o.P; const t = o.t; const face = st.facing; const dir = face === 'left' ? -1 : face === 'right' ? 1 : 0; const back = face === 'back';
     const pose = st.pose; const sit = pose === 'sit'; const hide = pose === 'hide';
@@ -174,31 +205,43 @@
     if (c.item === 'apron') { rr(ctx, neck[0] - 26, neck[1] + 40, 52, TORSO - 20, 10); fillOut(ctx, CREAM, 5); }
     if (c.item === 'tie') { ctx.beginPath(); ctx.moveTo(neck[0] - 8, neck[1] + 12); ctx.lineTo(neck[0] + 8, neck[1] + 12); ctx.lineTo(neck[0] + 10, neck[1] + 80); ctx.lineTo(neck[0], neck[1] + 96); ctx.lineTo(neck[0] - 10, neck[1] + 80); ctx.closePath(); fillOut(ctx, shade(c.bottom, 0.1), 4); }
     if (c.item === 'badge' || c.item === 'necklace') circ(ctx, neck[0] + (c.item === 'badge' ? 12 : 0), neck[1] + 40, 9, '#FFD27A', 4);
-    // arms by pose (+ one action in motion)
-    const sh = [neck[0], neck[1] + 16]; const fwd = dir || 1;
-    let A1; let A2; // hand positions
-    const reachK = o.motion === 'reach' ? ease(o.mp) : pose === 'reach' ? 1 : 0;
-    if (pose === 'cheer') { A1 = [sh[0] - 70, sh[1] - 110]; A2 = [sh[0] + 70, sh[1] - 110]; }
-    else if (pose === 'freeze') { A1 = [sh[0] - 100, sh[1] + 30]; A2 = [sh[0] + 100, sh[1] + 30]; }
-    else if (pose === 'point') { A1 = [sh[0] - 40 * fwd, sh[1] + 100]; A2 = [sh[0] + 125 * fwd, sh[1] + 10]; }
-    else if (pose === 'hold' || grip) { A1 = [sh[0] - 22 + shake, sh[1] + 64]; A2 = [sh[0] + 22 + shake, sh[1] + 64]; }
-    else if (hide) { A1 = [sh[0] - 54, sh[1] - 36]; A2 = [sh[0] + 54, sh[1] - 36]; }
-    else { A1 = [sh[0] - 46, sh[1] + 104]; A2 = [sh[0] + 46, sh[1] + 104]; }
-    if (reachK) A2 = [lerp(A2[0], sh[0] + 118 * fwd, reachK), lerp(A2[1], sh[1] + 30, reachK)];
-    if (phone) A2 = [sh[0] + 30 * fwd, sh[1] + 30];
-    const elbow = (h, s) => [(sh[0] + h[0]) / 2 + s * 8, (sh[1] + h[1]) / 2 + 6];
-    line(ctx, [sh, elbow(A1, -1), A1], c.top, 13); line(ctx, [sh, elbow(A2, 1), A2], c.top, 13);
-    if (c.item === 'watch') box(ctx, A1[0] - 9, A1[1] - 26, 18, 14, '#FFD27A', 4);
-    if (phone || (pose === 'hold' && st.holds === 'phone')) { box(ctx, A2[0] - 18, A2[1] - 44, 36, 58, INK, 7); box(ctx, A2[0] - 12, A2[1] - 38, 24, 40, o.accent && o.motion === 'phone-light' ? P.A : tint(P.S, 0.6), 4); }
-    if (o.motion === 'phone-light' && !phone) { box(ctx, A2[0] - 18, A2[1] - 44, 36, 58, INK, 7); const gl = 0.5 + 0.5 * Math.sin(t * 6); box(ctx, A2[0] - 12, A2[1] - 38, 24, 40, mix(o.accent ? P.A : tint(P.S, 0.5), '#FFFFFF', gl * 0.4), 4); }
-    if (c.item === 'book' && pose !== 'hold') box(ctx, A1[0] - 30, A1[1] - 30, 60, 40, P.D, 6);
-    if (c.item === 'umbrella' && !phone) line(ctx, [[A1[0], A1[1]], [A1[0] + 6, A1[1] + 120]], shade(c.top, 0.2), 12);
-    circ(ctx, A1[0], A1[1], 13, CREAM, 6); circ(ctx, A2[0], A2[1], 13, CREAM, 6); // mitt hands
+    // arms from the pose library (+ one action in motion). Small motion only: the hands drift with the breath. Held props are
+    // drawn AT the hand anchor (after the arm, before the mitt), so they move with the hand and can never float.
+    const fwd = dir || 1; let key = POSE_ARMS[o.arms] ? o.arms : 'idle';
+    if (grip && key === 'idle') key = 'tense';
+    let held = o.held || null;
+    if ((phone || o.motion === 'phone-light') && !held && (key === 'idle' || key === 'tense' || key === 'back')) { key = 'phone'; held = { kind: 'phone' }; }
+    const shUp = key === 'shrug' ? -8 : 0; const def = POSE_ARMS[key]; const idleDef = POSE_ARMS.idle;
+    let fOff = def.f.map((q) => q.slice()); let aOff = (def.a || def.f).map((q) => q.slice());
+    // one action in motion: a reach eases out from relaxed arms; a holding pose lifts the prop a little (e.g. lifting the mug)
+    const mk = ease(o.mp || 0);
+    if (o.motion === 'reach') {
+      if (held) { fOff[1][1] += 26 * (1 - mk); fOff[0][1] += 14 * (1 - mk); if (def.a === undefined) { aOff[1][1] += 26 * (1 - mk); aOff[0][1] += 14 * (1 - mk); } }
+      else { const tgt = key === 'idle' || key === 'tense' ? POSE_ARMS.reach : def; fOff = idleDef.f.map((q, k) => [lerp(q[0], tgt.f[k][0], mk), lerp(q[1], tgt.f[k][1], mk)]); key = key === 'idle' || key === 'tense' ? 'reach' : key; }
+    }
+    if (key === 'wave') { fOff[1][0] += Math.sin(t * TAU * 1.6) * 12; fOff[1][1] += Math.abs(Math.cos(t * TAU * 1.6)) * 4; }
+    const drift = Math.sin(t * TAU * 0.28 + x) * 1.6; const drift2 = Math.sin(t * TAU * 0.19 + x * 0.37) * 1.4;
+    const shF = [neck[0] + 16 * fwd, neck[1] + 18 + shUp]; const shA = [neck[0] - 16 * fwd, neck[1] + 18 + shUp];
+    const place = (q, side, k) => [neck[0] + q[0] * side + (k ? drift2 * side * 0.6 + shake : 0), neck[1] + q[1] + shUp + (k ? drift : drift * 0.5)];
+    const EF = place(fOff[0], fwd, 0); const HF = place(fOff[1], fwd, 1); const EA = place(aOff[0], -fwd, 0); const HA = place(aOff[1], -fwd, 1);
+    if (key === 'grip-cup' || key === 'reading') { HA[0] = HF[0] - 2 * (HF[0] - neck[0]) + 0; HA[1] = HF[1]; } // both hands on the same prop
+    line(ctx, [shA, EA, HA], c.top, 13); line(ctx, [shF, EF, HF], c.top, 13);
+    if (c.item === 'watch') box(ctx, HA[0] - 9, HA[1] - 26, 18, 14, '#FFD27A', 4);
+    let heldInfo = null;
+    if (held) {
+      const two = key === 'grip-cup' || key === 'reading'; const at = two ? [(HF[0] + HA[0]) / 2, (HF[1] + HA[1]) / 2] : HF.slice();
+      heldInfo = { kind: held.kind, hand: two ? 'both' : 'fwd', at, grip: drawHeld(ctx, held, at, fwd, o, P, t) };
+    }
+    if (c.item === 'book' && !held && key !== 'cheer' && key !== 'wave') box(ctx, HA[0] - 30, HA[1] - 30, 60, 40, P.D, 6);
+    if (c.item === 'umbrella' && !(held && (key === 'grip-cup' || key === 'reading'))) line(ctx, [[HA[0], HA[1]], [HA[0] + 6, HA[1] + 120]], shade(c.top, 0.2), 12);
+    circ(ctx, HA[0], HA[1], 13, CREAM, 6); circ(ctx, HF[0], HF[1], 13, CREAM, 6); // mitt hands, in front of the prop
     if (c.item === 'bag') { ctx.beginPath(); ctx.moveTo(neck[0] - 20, neck[1] + 10); ctx.lineTo(hip[0] + 50 * fwd, hip[1] - 20); ctx.lineWidth = 6; ctx.strokeStyle = INK; ctx.stroke(); box(ctx, hip[0] + 30 * fwd - 30, hip[1] - 40, 60, 52, shade(P.S, 0.15), 10); }
     if (c.item === 'scarf') { line(ctx, [[neck[0] - 26, neck[1] + 4], [neck[0] + 26, neck[1] + 4]], c.itemColor || tint(P.S, 0.25), 18); line(ctx, [[neck[0] + 14 * fwd, neck[1] + 8], [neck[0] + 22 * fwd, neck[1] + 56]], c.itemColor || tint(P.S, 0.25), 14); }
+    const isT = (sh2, h2) => { const dx = Math.abs(h2[0] - sh2[0]); const dy = Math.abs(h2[1] - sh2[1]); return dx > 70 && dy < 0.45 * dx; };
+    const arms = { key, shF, shA, HF, HA, EF, EA, tpose: isT(shF, HF) && isT(shA, HA), held: heldInfo };
     // head (circle), hair, face
     head(ctx, c, hx, hy, HR, { look, glance, eyes: st.eyes, back, t, blinkSeed: x, symbol: st.symbol, k, accent: o.accent, P, mood: o.mood });
-    return { x: hx, y: hy, r: HR, back, id: c.id };
+    return { x: hx, y: hy, r: HR, back, id: c.id, arms };
   }
   function hair(ctx, c, x, y, r, side, back, front) {
     const col = c.hairColor; const h = c.hair;
@@ -270,12 +313,14 @@
       o = o || {}; this.p = plan; this.P = paletteOf(plan); this.tm = o.timing || VTS.story.timing(plan, o.lineDur); this.lines = o.lines || []; this.opt = o;
       this.chars = new Map(plan.characters.map((c, i) => [c.id, Object.assign({}, c, { itemColor: i % 2 ? tint(plan.colorScript.dominant.hex, -0) : tint(plan.colorScript.support.hex, 0.3) })]));
       this.total = this.tm.total; this.panels = plan.panels;
+      // arm pose per figure per panel (saved by the engine, or mapped now from ACTION / BOARD NOTES for older plans)
+      const S = VTS.story; this.poses = plan.panels.map((pn) => new Map(((pn.stage && pn.stage.chars) || []).map((sc) => [sc.id, sc.arms ? { arms: sc.arms, holds: sc.holds || null } : S && S.poseFor ? S.poseFor(plan, pn, sc) : { arms: 'idle', holds: null }])));
       return this;
     }
     shotAt(t) { const S = this.tm.shots; for (let i = S.length - 1; i >= 0; i--) if (t >= S[i].start) return { i, sh: S[i], local: t - S[i].start }; return { i: 0, sh: S[0], local: t }; }
     draw(t, opt) {
       opt = opt || {}; const ctx = this.ctx; const sx = this.c.width / W; ctx.setTransform(sx, 0, 0, sx, 0, 0); ctx.globalAlpha = 1;
-      this.layout = { t, faces: [], text: [] };
+      this.layout = { t, faces: [], text: [], figures: [], clue: null };
       if (t >= this.tm.endCard.start) { this.endCard(t - this.tm.endCard.start); return this.layout; }
       const { i, sh, local } = this.shotAt(t); const pn = this.panels[i]; const mp = clamp(local / sh.dur, 0, 1);
       this.shot(ctx, pn, i, local, mp, sh, t);
@@ -314,11 +359,19 @@
       placed.forEach((q) => { if (q.sc.pose === 'sit' && !q.sc.far) stool(ctx, q.x, P); });
       // clue on a little table/counter in front (hidden = not drawn; partial = half hidden behind the counter edge)
       const clue = st.clue || {}; const showClue = clue.object && clue.object !== 'none' && clue.state !== 'hidden' && clue.object !== 'door';
-      const drawClue = () => { if (!showClue) return; const big = clue.object === 'sign' || clue.object === 'banner' || clue.object === 'kitten' || clue.object === 'puppy'; const y = big ? FEET : 1010; if (!big && pn.location !== 'coffee shop' && pn.location !== 'kitchen' && pn.location !== 'party kitchen') table(ctx, clueX, 1010, 200, P); clueObject(ctx, clue.object, clueX + (placed.some((q) => Math.abs(q.x - clueX) < 60) ? 120 : 0), y, big ? 0.9 : 0.55, P, accent && (clue.state === 'revealed' || pn.mood !== 'uneasy normal'), clue.state === 'partial' ? partialLabel(clue.label) : clue.label, t); };
+      const poses = (this.poses && this.poses[i]) || new Map(); const poseOf = (sc) => poses.get(sc.id) || { arms: 'idle', holds: null };
+      const clueAccent = accent && (clue.state === 'revealed' || pn.mood !== 'uneasy normal'); const clueLabel = clue.state === 'partial' ? partialLabel(clue.label) : clue.label;
+      // who holds the clue (the prop is drawn at that character's hand, never on its own in the air)
+      const holder = showClue ? placed.find((q) => !q.sc.far && holdMatch(poseOf(q.sc).holds, clue.object)) : null;
+      const heldFor = (q) => { const h = poseOf(q.sc).holds; if (!h) return null; if (holder === q) return { kind: clue.object === 'letter' && h === 'note' ? 'letter' : h === 'cup' ? 'cup' : clue.object, label: clueLabel, accent: clueAccent, clue: true }; return { kind: h }; };
+      const drawClue = () => { if (!showClue || holder) return; const big = clue.object === 'sign' || clue.object === 'banner' || clue.object === 'kitten' || clue.object === 'puppy'; const cx = clueX + (placed.some((q) => Math.abs(q.x - clueX) < 60) ? 120 : 0);
+        const surf = SURFACE[pn.location]; let y = big ? FEET : 1010; let on = big ? 'floor' : 'table';
+        if (!big && surf && cx >= surf[1] + 40 && cx <= surf[2] - 40) { y = surf[0] + 4; on = 'counter'; } else if (!big) table(ctx, cx, 1010, 200, P);
+        clueObject(ctx, clue.object, cx, y, big ? 0.9 : 0.55, P, clueAccent, clueLabel, t); this.layout.clue = { object: clue.object, on }; };
       // far characters first (depth), then the clue, then the main characters
-      placed.filter((q) => q.sc.far).forEach((q) => this.person(ctx, q, 0.62, { t, k: 0, motion: 'none', mp, accent, mood: pn.mood }, cam, sx));
-      drawClue();
-      placed.filter((q) => !q.sc.far).forEach((q) => this.person(ctx, q, 1, { t, k: k * (q.sc.id === (focusP.sc && focusP.sc.id) ? 1 : 0.6), motion: q.sc.id === (focusP.sc && focusP.sc.id) || n === 1 ? motion : 'none', mp, accent, mood: pn.mood }, cam, sx));
+      placed.filter((q) => q.sc.far).forEach((q) => this.person(ctx, q, 0.62, { t, k: 0, motion: 'none', mp, accent, mood: pn.mood, arms: poseOf(q.sc).arms, held: heldFor(q) }, cam, sx));
+      drawClue(); if (holder) this.layout.clue = { object: clue.object, on: 'hand', by: holder.sc.id };
+      placed.filter((q) => !q.sc.far).forEach((q) => this.person(ctx, q, 1, { t, k: k * (q.sc.id === (focusP.sc && focusP.sc.id) ? 1 : 0.6), motion: q.sc.id === (focusP.sc && focusP.sc.id) || n === 1 ? motion : 'none', mp, accent, mood: pn.mood, arms: poseOf(q.sc).arms, held: heldFor(q) }, cam, sx));
       if (pn.shot === 'over-shoulder') { const other = placed.find((q) => q !== focusP && !q.sc.far); const c = other ? this.chars.get(other.sc.id) : null; ctx.setTransform(sx, 0, 0, sx, 0, 0); if (c) { line(ctx, [[60, 1500], [330, 1290]], c.top, 150); head(ctx, c, 210, 1100, 210, { look: 0, glance: 0, eyes: 'neutral', back: true, t, blinkSeed: 1, symbol: 'none', P }); } }
       // soft colour vignette (lighting is colour, not shade); held frames feel held
       ctx.setTransform(sx, 0, 0, sx, 0, 0); const vg = ctx.createRadialGradient(540, 860, 520, 540, 900, 1250); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, hexA(shade(P.D, 0.35), pn.silence ? 0.32 : 0.18)); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
@@ -328,6 +381,8 @@
       const c = this.chars.get(q.sc.id); if (!c) return;
       ctx.save(); if (scale !== 1) { ctx.translate(q.x, FEET - 40); ctx.scale(scale, scale); ctx.translate(-q.x, -(FEET - 40)); }
       const hd = figure(ctx, c, q.sc, q.x, Object.assign({ P: this.P }, o));
+      { const m = ctx.getTransform(); const k0 = this.c.width / W; const scr = (pt) => [+((m.a * pt[0] + m.c * pt[1] + m.e) / k0).toFixed(1), +((m.b * pt[0] + m.d * pt[1] + m.f) / k0).toFixed(1)]; const A2 = hd.arms; const h = A2.held;
+        this.layout.figures.push({ id: c.id, arms: A2.key, tpose: A2.tpose, hands: [scr(A2.HF), scr(A2.HA)], held: h ? { kind: h.kind, hand: h.hand, at: scr(h.at), grip: scr(h.grip), handAt: h.hand === 'both' ? scr([(A2.HF[0] + A2.HA[0]) / 2, (A2.HF[1] + A2.HA[1]) / 2]) : scr(A2.HF) } : null }); }
       ctx.restore();
       // record the face box in screen space (for the caption/face overlap QA)
       if (!hd.back) { const k = cam.s * scale; const hx = scale !== 1 ? q.x + (hd.x - q.x) * scale : hd.x; const hy = scale !== 1 ? (FEET - 40) + (hd.y - (FEET - 40)) * scale : hd.y; const X = cam.tx + (hx - cam.fx) * cam.s; const Y = cam.ty + (hy - cam.fy) * cam.s; const R = hd.r * k; if (X + R > 0 && X - R < W && Y + R > 0 && Y - R < H) this.layout.faces.push({ id: c.id, x: X - R, y: Y - R, w: 2 * R, h: 2 * R }); }
@@ -349,27 +404,34 @@
     // lower-third captions + dialogue subtitle (never over faces; inside the safe margins); panel-1 hook text at the top
     texts(ctx, pn, i, local, sh, t) {
       const faces = this.layout.faces; const rows = [];
-      // the spoken line on screen: the latest character line of this panel that has started (dialogue, then the snap reply)
-      const spoken = [pn.dialogue, pn.reply].filter((d) => d && d.line);
-      const ls = this.lines.filter((l) => l.panel === i && l.who !== 'narrator' && t >= l.start - 0.12); const ln = ls[ls.length - 1];
-      let d = null; if (ln) d = spoken.find((q) => q.line === ln.text) || spoken.find((q) => q.speaker === ln.who); else if (!this.lines.length && local > 0.3) d = spoken.length > 1 && local > sh.dur * 0.55 ? spoken[1] : spoken[0];
-      if (d) { const c = this.chars.get(d.speaker); rows.push({ kind: 'dialogue', name: c ? c.name : '', col: c ? c.top : this.P.S, text: '“' + d.line + '”' }); }
-      if (pn.caption && local > 0.15) rows.push({ kind: 'caption', text: pn.caption });
-      let y = CAP_TOP; const fade = clamp(local / 0.18, 0, 1);
+      // ONE SOURCE OF TRUTH: while a line is voiced, the burned-in text is exactly that line (narrator -> caption box, character ->
+      // name-tagged box), from just before it starts until the next line of the panel. Unvoiced panels show their CAPTION.
+      const row = (who, text, from) => { if (who === 'narrator') return { kind: 'caption', text, who, from }; const c = this.chars.get(who); return { kind: 'dialogue', who, name: c ? c.name : '', col: c ? c.top : this.P.S, text, from }; };
+      const mine = this.lines.filter((l) => l.panel === i);
+      if (mine.length) { const started = mine.filter((l) => t >= l.start - 0.12); const ln = started[started.length - 1]; if (ln) rows.push(Object.assign(row(ln.who, ln.text, ln.start - 0.12), { voiced: true })); }
+      else if (!this.lines.length) { // not voiced yet (app preview): the lines the cast will read, in order through the shot
+        const seq = []; if (this.p.narrator && this.p.narrator.use !== false && pn.narration && !pn.silence) seq.push(['narrator', pn.narration]);
+        [pn.dialogue, pn.reply].forEach((d) => { if (d && d.line) seq.push([d.speaker, d.line]); });
+        if (seq.length) { if (local > 0.15) { const span = Math.max(0.5, sh.dur - 0.3) / seq.length; const kq = Math.min(seq.length - 1, Math.floor((local - 0.15) / span)); rows.push(row(seq[kq][0], seq[kq][1], sh.start + 0.15 + kq * span)); } }
+        else if (pn.caption && local > 0.15) rows.push({ kind: 'caption', text: pn.caption, from: sh.start + 0.15 });
+      } else if (pn.caption && local > 0.15) rows.push({ kind: 'caption', text: pn.caption, from: sh.start + 0.15 });
+      let y = CAP_TOP;
       // never over faces: if a face reaches into the lower third, push the block down (still inside the safe area)
       const faceBottom = faces.reduce((m, f) => (f.x < W - SAFE.side && f.x + f.w > SAFE.side ? Math.max(m, f.y + f.h) : m), 0);
       if (faceBottom + 16 > y) y = faceBottom + 16;
-      ctx.globalAlpha = fade;
       for (const r of rows) {
-        const size = r.kind === 'dialogue' ? 50 : 46; ctx.font = `800 ${size}px ${FONT}`; const maxW = W - 2 * SAFE.side - 60;
-        const lines = wrap(ctx, r.text, maxW).slice(0, 2); const lw = Math.max(...lines.map((l) => ctx.measureText(l).width)); const bw = Math.min(W - 2 * SAFE.side, lw + 64); const bh = lines.length * size * 1.18 + 34 + (r.name ? 34 : 0);
+        ctx.globalAlpha = clamp((t - r.from) / 0.16, 0, 1);
+        // the whole text, never truncated: shrink to fit two lines, three lines as a last resort
+        const maxW = W - 2 * SAFE.side - 60; let size = r.kind === 'dialogue' ? 50 : 46; let lines;
+        for (;;) { ctx.font = `800 ${size}px ${FONT}`; lines = wrap(ctx, r.text, maxW); if (lines.length <= 2 || size <= 34) break; size -= 2; }
+        const lw = Math.max(...lines.map((l) => ctx.measureText(l).width)); const bw = Math.min(W - 2 * SAFE.side, lw + 64); const bh = lines.length * size * 1.18 + 34 + (r.name ? 34 : 0);
         const bx = (W - bw) / 2;
         if (y + bh > SAFE.bottom) y = Math.max(CAP_TOP - 40, SAFE.bottom - bh);
         rr(ctx, bx, y, bw, bh, 26); ctx.fillStyle = r.kind === 'dialogue' ? '#FFFFFF' : hexA(INK, 0.86); ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = INK; ctx.stroke();
         let ty = y + 17; if (r.name) { ctx.font = `900 28px ${FONT}`; const nw = ctx.measureText(r.name.toUpperCase()).width + 30; rr(ctx, bx + 24, y - 18, nw, 40, 20); ctx.fillStyle = r.col; ctx.fill(); ctx.lineWidth = 4; ctx.stroke(); ctx.fillStyle = lum(r.col) < 0.5 ? '#FFFFFF' : INK; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(r.name.toUpperCase(), bx + 39, y + 2); ty += 26; }
         ctx.font = `800 ${size}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = r.kind === 'dialogue' ? INK : '#FFFFFF';
         lines.forEach((l, k) => ctx.fillText(l, W / 2, ty + k * size * 1.18));
-        this.layout.text.push({ kind: r.kind, x: bx, y: y - (r.name ? 18 : 0), w: bw, h: bh + (r.name ? 18 : 0) });
+        this.layout.text.push({ kind: r.kind, who: r.who || null, voiced: !!r.voiced, text: r.text, drawn: lines.join(' '), x: bx, y: y - (r.name ? 18 : 0), w: bw, h: bh + (r.name ? 18 : 0) });
         y += bh + 22;
       }
       // panel-1 hook text (max 8 words), top safe area
@@ -400,10 +462,31 @@
     // a still of one panel (thumbnail strip, still-frame export): the moment after its one action
     drawPanel(i, o) { const sh = this.tm.shots[i]; const t = sh.start + Math.min(sh.dur - 0.05, Math.max(0.6, sh.dur * 0.72)); return this.draw(t, o); }
   }
+  // surfaces small clues rest on (top y, x range) so a cup or note sits on the counter instead of hanging in front of it
+  const SURFACE = { 'coffee shop': [880, -40, 1120], kitchen: [840, 330, 1090], 'party kitchen': [860, 330, 1090] };
+  function holdMatch(h, obj) { if (!h || !obj) return false; if (h === obj) return true; return h === 'note' && (obj === 'letter' || obj === 'photo' || obj === 'ticket'); }
+  // final-QA check: while a line is voiced, the on-screen caption/dialogue text is exactly the spoken text (and nothing else)
+  const normText = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+  function captionCheck(layout, lines) {
+    const t = layout.t; const issues = []; const rows = layout.text.filter((r) => r.kind === 'caption' || r.kind === 'dialogue');
+    const active = (lines || []).filter((l) => t >= l.start + 0.05 && t <= l.start + l.dur - 0.05);
+    for (const l of active) { const hit = rows.find((r) => normText(r.drawn) === normText(l.text) && (r.who || 'narrator') === l.who); if (!hit) issues.push({ t: +t.toFixed(2), panel: l.panel + 1, who: l.who, voiced: l.text, onScreen: rows.map((r) => r.drawn) }); }
+    if (active.length) { const extra = rows.filter((r) => !active.some((l) => normText(r.drawn) === normText(l.text))); if (extra.length) issues.push({ t: +t.toFixed(2), extraText: extra.map((r) => r.drawn), voiced: active.map((l) => l.text) }); }
+    return issues;
+  }
+  // final-QA check: no T-pose, and every held prop sits on its hand anchor (within 2 px)
+  function poseCheck(layout) {
+    const issues = [];
+    for (const f of layout.figures || []) {
+      if (f.tpose) issues.push({ t: +layout.t.toFixed(2), id: f.id, issue: 'T-pose', arms: f.arms });
+      if (f.held) { const d = Math.hypot(f.held.grip[0] - f.held.handAt[0], f.held.grip[1] - f.held.handAt[1]); if (d > 2) issues.push({ t: +layout.t.toFixed(2), id: f.id, issue: 'prop off the hand', kind: f.held.kind, px: +d.toFixed(1) }); }
+    }
+    return issues;
+  }
   function partialLabel(s) { const w = String(s || '').split(/\s+/).filter(Boolean); if (!w.length) return ''; return w.length > 1 ? w.slice(0, Math.ceil(w.length / 2)).join(' ') + ' …' : w[0].slice(0, Math.max(2, Math.ceil(w[0].length / 2))) + '…'; }
   function wrap(ctx, text, maxW) { const ws = String(text || '').split(/\s+/).filter(Boolean); const out = []; let cur = ''; for (const w of ws) { const tst = cur ? cur + ' ' + w : w; if (ctx.measureText(tst).width > maxW && cur) { out.push(cur); cur = w; } else cur = tst; } if (cur) out.push(cur); return out; }
   // overlap check used by QA: any text box over any face box
   function overlaps(layout) { const hit = []; for (const f of layout.faces) for (const b of layout.text) { if (f.x < b.x + b.w && f.x + f.w > b.x && f.y < b.y + b.h && f.y + f.h > b.y) hit.push({ face: f.id, text: b.kind }); } return hit; }
 
-  VTS.storyDraw = { StoryRenderer, overlaps, paletteOf, W, H, SAFE, CAP_TOP };
+  VTS.storyDraw = { StoryRenderer, overlaps, captionCheck, poseCheck, paletteOf, POSE_ARMS, W, H, SAFE, CAP_TOP };
 }());
