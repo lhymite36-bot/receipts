@@ -90,14 +90,14 @@ function standIn(lines, voice) {
 }
 const exhausted = new Set();
 async function ttsAny(voice, mk, o) { // tries the allowed models in order; throws {quota:true} only when every allowed model is out
-  let last = null;
+  let last = null; const order = o && o.prefer ? [o.prefer, ...ALLOWED.filter((m) => m !== o.prefer)] : ALLOWED;
   if (OFFLINE) { // cached take from any allowed model first (a take may have been made on the fallback model), then a stand-in
-    for (const m of ALLOWED) { try { return { x: await tts(m, voice, mk(m), Object.assign({}, o, { lines: null })), model: m }; } catch (e) { if (!e.quota) throw e; } }
+    for (const m of order) { try { return { x: await tts(m, voice, mk(m), Object.assign({}, o, { lines: null })), model: m }; } catch (e) { if (!e.quota) throw e; } }
     return { x: await tts(ALLOWED[0], voice, mk(ALLOWED[0]), o), model: ALLOWED[0] + ' (stand-in)' };
   }
   // a take already made on any allowed model (e.g. on the fallback after a quota stop) is reused, unless a fresh take was asked:
   // the line keeps the exact voice it was approved with, and a re-render makes no TTS request at all
-  if (!(o && o.fresh)) for (const m of ALLOWED) { const h = takeKey(m, voice, mk(m)); if (fs.existsSync(TAKES + '/' + h + '.pcm')) return { x: await tts(m, voice, mk(m), o), model: m }; }
+  if (!(o && o.fresh)) for (const m of order) { const h = takeKey(m, voice, mk(m)); if (fs.existsSync(TAKES + '/' + h + '.pcm')) return { x: await tts(m, voice, mk(m), o), model: m }; }
   for (const m of ALLOWED) { if (exhausted.has(m)) continue; try { return { x: await tts(m, voice, mk(m), o), model: m }; } catch (e) { last = e; if (e.quota) { exhausted.add(m); log(`  ${m}: quota exhausted (${red(e.message).slice(0, 120)})`); continue; } if (e.soft || e.status >= 500) continue; throw e; } }
   throw Object.assign(new Error('TTS quota exhausted on every allowed model: ' + ALLOWED.join(', ') + (last ? ' (' + red(last.message).slice(0, 160) + ')' : '')), { quota: true });
 }
@@ -171,12 +171,17 @@ async function castOne(p, who, ls, models, glitches, verify) {
   if (fresh) log(`  ${who}: fresh take requested (--retake)`);
   const freshLine = (l) => !OFFLINE && RETAKE_LINES.has(`${l.panel + 1}:${who}`);
   const styleOf = (l) => S.styleFor(p, who, l.delivery, l.direction);
-  const target = ALLOWED.find((m) => !exhausted.has(m)) || ALLOWED[0];
+  // the model the character's batch will come from: one that already has this batch cached (so a quota stop on the first model
+  // mid-run never turns a cached batch into fresh per-line requests on the fallback), else the first model with quota left
+  const batchParts = (m) => (structured(m) ? ls.map((l) => ({ text: l.text, speech_metadata: { style: S.styleFor(p, who, l.delivery) } })) : [{ text: S.styleFor(p, who, ls[0].delivery) + '. Read each paragraph separately, with a clear one-second pause between paragraphs:\n\n' + ls.map((l) => l.text).join('\n\n') }]);
+  const batchable = (m) => structured(m) || new Set(ls.map((l) => l.delivery)).size === 1; // models that take this character's lines in one request
+  const cachedBatch = !fresh && ls.length > 1 ? ALLOWED.find((m) => batchable(m) && fs.existsSync(TAKES + '/' + takeKey(m, voice, batchParts(m)) + '.pcm')) : null;
+  const target = cachedBatch || ALLOWED.find((m) => !exhausted.has(m)) || ALLOWED[0];
   // one request per character when the model takes a style per line (3.5+); older models get one request per line when deliveries differ.
   // The batch is always the character's full line set in its base styles (one consistent voice; same cache key as before any
   // per-line direction), and a line with its own direction is then re-read alone and replaces its batch segment.
-  if (ls.length > 1 && (structured(target) || new Set(ls.map((l) => l.delivery)).size === 1)) {
-    const r = await ttsAny(voice, (m) => (structured(m) ? ls.map((l) => ({ text: l.text, speech_metadata: { style: S.styleFor(p, who, l.delivery) } })) : [{ text: S.styleFor(p, who, ls[0].delivery) + '. Read each paragraph separately, with a clear one-second pause between paragraphs:\n\n' + ls.map((l) => l.text).join('\n\n') }]), { fresh, lines: ls.map((l) => l.text) });
+  if (ls.length > 1 && batchable(target)) {
+    const r = await ttsAny(voice, batchParts, { fresh, lines: ls.map((l) => l.text), prefer: target });
     model = r.model; stood = stood || !!r.x.standIn; const ct = A.cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g)));
     segs = A.splitTake(ct.x, ls.length, ls.map((l) => toks(l.text).length), RATE);
     if (segs && !stood) { const heard = heardPerSegment(segs); if (heard) { const sc = heard.map((h, k) => sim(h, ls[k].text)); verify.push({ who, take: 'batch', scores: sc.map((v) => +v.toFixed(2)), heard, firstWord: heard.map((h, k) => firstHeard(h, ls[k].text)), lines: ls.map((l) => l.panel + 1) }); if (sc.some((v, k) => v < 0.6 && !ls[k].direction)) { log(`  ${who}: batch split does not match the lines (${sc.map((v) => v.toFixed(2)).join(', ')}), one request per line`); segs = null; } } }
@@ -246,7 +251,7 @@ async function render(p, lines) {
       const dec = (b) => { const s = atob(b); const x = new Float32Array(s.length >> 1); for (let i = 0; i < x.length; i++) { let v = s.charCodeAt(2 * i) | (s.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; x[i] = v / 32768; } return x; };
       const lines = pl.map((l) => Object.assign({}, l, { x: dec(l.b64), b64: undefined }));
       const c = document.createElement('canvas'); c.width = 1080; c.height = 1920; const r = new window.VTS.storyDraw.StoryRenderer(c).setup(plan, { timing: tm, lines });
-      window.__r = r; window.__c = c; window.__ov = []; window.__cap = []; window.__pose = []; window.__stat = { capFrames: 0, poses: {}, held: {} };
+      window.__r = r; window.__c = c; window.__ov = []; window.__cap = []; window.__pose = []; window.__wall = []; window.__stat = { capFrames: 0, poses: {}, held: {}, wall: {} };
       window.__lines = lines.map((l) => ({ panel: l.panel, who: l.who, start: l.start, dur: l.dur, text: l.text }));
       const m = await window.VTS.storyAudio.mix(plan, lines, tm, { music, stems: true }); const wav = window.VTS.storyAudio.wavBytes(m);
       const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -264,15 +269,15 @@ async function render(p, lines) {
     for (let f0 = 0; f0 < NF; f0 += B) {
       const batch = await page.evaluate((f0, n, NF, FPS) => { const D = window.VTS.storyDraw; const st = window.__stat; const out = []; for (let f = f0; f < Math.min(NF, f0 + n); f++) { const L2 = window.__r.draw(f / FPS); const ov = D.overlaps(L2); if (ov.length) window.__ov.push({ f, ov });
           const cc = D.captionCheck(L2, window.__lines); if (cc.length && window.__cap.length < 200) window.__cap.push(...cc); if (window.__lines.some((l) => L2.t >= l.start + 0.05 && L2.t <= l.start + l.dur - 0.05)) st.capFrames++;
-          const pc = D.poseCheck(L2); if (pc.length && window.__pose.length < 200) window.__pose.push(...pc); (L2.figures || []).forEach((g) => { st.poses[g.id + ':' + g.arms] = (st.poses[g.id + ':' + g.arms] || 0) + 1; if (g.held) st.held[g.id + ':' + g.held.kind] = (st.held[g.id + ':' + g.held.kind] || 0) + 1; }); out.push(window.__c.toDataURL('image/jpeg', 0.93).split(',')[1]); } return out; }, f0, B, NF, FPS);
+          const pc = D.poseCheck(L2); if (pc.length && window.__pose.length < 200) window.__pose.push(...pc); const wc = D.wallCheck(L2); if (wc.length && window.__wall.length < 200) window.__wall.push(...wc); (L2.wall || []).forEach((w) => { st.wall[w.id] = w.dx; }); (L2.wallHidden || []).forEach((id) => { st.wall[id] = 'hidden'; }); (L2.figures || []).forEach((g) => { st.poses[g.id + ':' + g.arms] = (st.poses[g.id + ':' + g.arms] || 0) + 1; if (g.held) st.held[g.id + ':' + g.held.kind] = (st.held[g.id + ':' + g.held.kind] || 0) + 1; }); out.push(window.__c.toDataURL('image/jpeg', 0.93).split(',')[1]); } return out; }, f0, B, NF, FPS);
       for (const b of batch) { if (!ff.stdin.write(Buffer.from(b, 'base64'))) await new Promise((r) => ff.stdin.once('drain', r)); }
       if (f0 % (B * 5) === 0) process.stdout.write(`  frame ${f0}/${NF}\r`);
     }
-    ff.stdin.end(); await done; overlaps.push(...await page.evaluate(() => window.__ov)); const chk = await page.evaluate(() => ({ cap: window.__cap, pose: window.__pose, stat: window.__stat }));
+    ff.stdin.end(); await done; overlaps.push(...await page.evaluate(() => window.__ov)); const chk = await page.evaluate(() => ({ cap: window.__cap, pose: window.__pose, wall: window.__wall, stat: window.__stat }));
     let stills = [];
     if (flag('stills')) { fs.mkdirSync(OUT + '.stills', { recursive: true }); stills = await page.evaluate((n) => { const o = []; for (let i = 0; i < n; i++) { window.__r.drawPanel(i); o.push(window.__c.toDataURL('image/png').split(',')[1]); } return o; }, p.panels.length); stills.forEach((b, i) => fs.writeFileSync(`${OUT}.stills/panel-${String(i + 1).padStart(2, '0')}.png`, Buffer.from(b, 'base64'))); }
     log(`  rendered ${OUT}.mp4${stills.length ? ', ' + stills.length + ' stills' : ''}${errs.length ? ' | page errors: ' + errs.slice(0, 3).join(' / ') : ''}`);
-    return { tm, placed, cues: info.cues, silence: info.silence, overlaps, errs, capIssues: chk.cap, poseIssues: chk.pose, stat: chk.stat, stems };
+    return { tm, placed, cues: info.cues, silence: info.silence, overlaps, errs, capIssues: chk.cap, poseIssues: chk.pose, wallIssues: chk.wall, stat: chk.stat, stems };
   } finally { await browser.close(); srv.close(); }
 }
 // ---------- 4) QA on the final MP4 ----------
@@ -313,6 +318,7 @@ function finalQa(p, r, voiceLog) {
     ...(musicOn ? [['music plays under the story (every non-silent shot > -56 dBFS in the music stem, ducked under voices) and drops out on the silence beat (< -80 dBFS)', musicOn.perShotDb.every((v) => v > -56) && musicOn.silenceBeatDb.every((v) => v < -80), musicOn]] : []),
     ['captions = spoken text: while each line is voiced, the burned-in text is exactly that line, nothing else (every frame; plan captions in sync)', !r.capIssues.length && !S.captionMismatches(p).length && r.stat.capFrames > 0, { frameIssues: r.capIssues.slice(0, 5), planMismatches: S.captionMismatches(p), framesChecked: r.stat.capFrames }],
     ['poses: no T-pose, every held prop on its hand anchor and never over a head circle (every frame)', !r.poseIssues.length, { issues: r.poseIssues.slice(0, 5), poses: r.stat.poses, held: r.stat.held }],
+    ['background wall objects (signs, machines, frames, lamps...) never sit behind or over any head (every frame; objects shifted per location, dx in px)', !r.wallIssues.length, { issues: r.wallIssues.slice(0, 5), shifted: r.stat.wall }],
     ['each character keeps a distinct voice in the final mix (pitch >= 3 st, brightness >= 18%, or a different speaker by timbre: speaker-embedding cosine <= ' + A.SPEAKER_COS + ')', mq.checks[0].ok, { who: mq.who, pairs: mq.pairs }],
     ...mq.checks.filter((c) => /gender range/.test(c.name)).map((c) => [c.name.replace('adult voices', 'adult voices in the final mix'), c.ok, c.val]),
     ['sound effects never play over a spoken line (effects stem >= 30 dB under the line, from 0.1 s before it to its end)', fxOver.every((q) => q.ok), { lines: fxOver, cues: r.cues }],

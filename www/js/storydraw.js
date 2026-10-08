@@ -63,32 +63,35 @@
   function stool(ctx, x, P) { box(ctx, x - 52, FEET - 150, 104, 24, P.prop, 12); line(ctx, [[x - 34, FEET - 126], [x - 44, FEET]], P.prop3, 9); line(ctx, [[x + 34, FEET - 126], [x + 44, FEET]], P.prop3, 9); }
   function cup(ctx, x, y, s, P, sleeve) { s = s || 1; ctx.beginPath(); ctx.moveTo(x - 34 * s, y - 92 * s); ctx.lineTo(x + 34 * s, y - 92 * s); ctx.lineTo(x + 26 * s, y); ctx.lineTo(x - 26 * s, y); ctx.closePath(); fillOut(ctx, CREAM, OUT * Math.min(1.4, s)); box(ctx, x - 40 * s, y - 108 * s, 80 * s, 18 * s, tint(P.S, 0.4), 8 * s); ctx.beginPath(); ctx.moveTo(x - 31 * s, y - 64 * s); ctx.lineTo(x + 31 * s, y - 64 * s); ctx.lineTo(x + 28 * s, y - 34 * s); ctx.lineTo(x - 28 * s, y - 34 * s); ctx.closePath(); fillOut(ctx, sleeve || P.prop, OUT * Math.min(1.4, s)); }
   const BG = {
-    'coffee shop': (ctx, P, L, t) => { windowAt(ctx, 70, 330, 300, 360, L.tod, P); plant(ctx, 220, 700, 0.8, P); box(ctx, 600, 300, 360, 250, '#2F5D62', 16); for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(640, 360 + i * 46); ctx.lineTo(640 + 120 + hash(i) * 150, 360 + i * 46); ctx.lineWidth = 7; ctx.strokeStyle = '#F4F1DE'; ctx.lineCap = 'round'; ctx.stroke(); } lamp(ctx, 470, 240, P); lamp(ctx, 830, 640, P, false);
-      box(ctx, -40, 900, 1160, 250, P.prop, 8); box(ctx, -40, 880, 1160, 40, P.prop2, 8); box(ctx, 690, 760, 170, 130, tint(P.D, 0.1), 14); box(ctx, 715, 790, 120, 36, P.prop3, 8); line(ctx, [[745, 826], [745, 860]], INK, 6, false); line(ctx, [[805, 826], [805, 860]], INK, 6, false); cup(ctx, 940, 880, 0.55, P); cup(ctx, 1000, 880, 0.55, P); },
-    kitchen: (ctx, P, L) => { windowAt(ctx, 380, 330, 320, 300, L.tod, P, true); box(ctx, 60, 520, 240, 630, CREAM, 20); line(ctx, [[260, 700], [260, 800]], INK, 8, false); [P.D, '#FFD6A5', P.prop].forEach((c, i) => circ(ctx, 120 + i * 50, 600 + (i % 2) * 40, 14, c, 4)); box(ctx, 330, 860, 760, 290, P.prop, 10); box(ctx, 330, 840, 760, 36, P.prop2, 8); box(ctx, 790, 760, 120, 80, CREAM, 18); ctx.beginPath(); ctx.arc(850, 760, 34, Math.PI, 0); fillOut(ctx, tint(P.S, 0.3)); box(ctx, 430, 760, 200, 80, tint(P.D, 0.2), 10); },
-    bedroom: (ctx, P, L) => { windowAt(ctx, 600, 320, 320, 320, L.tod, P, true); box(ctx, 60, 820, 520, 260, P.prop2, 24); box(ctx, 60, 700, 70, 400, P.prop3, 14); box(ctx, 100, 840, 140, 70, CREAM, 30); box(ctx, 230, 860, 360, 220, tint(P.D, 0.15), 24); for (let i = 0; i < 3; i++) box(ctx, 260 + i * 110, 900, 70, 70, tint(P.S, 0.55), 12); box(ctx, 640, 900, 120, 250, P.prop, 10); lamp(ctx, 700, 780, P); box(ctx, 160, 360, 220, 260, tint(P.S, 0.6), 10); circ(ctx, 270, 470, 60, '#FFD6A5', 5); },
-    'bathroom mirror': (ctx, P, L) => { for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) { ctx.fillStyle = (r + c) % 2 ? tint(P.D, 0.5) : tint(P.D, 0.6); ctx.fillRect(c * 130 - 40, 600 + r * 70, 130, 70); } circ(ctx, 540, 520, 230, tint(P.S, 0.8), 10); ctx.save(); ctx.beginPath(); ctx.arc(540, 520, 214, 0, TAU); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(380, 300, 60, 500); ctx.fillRect(470, 300, 24, 500); ctx.restore(); box(ctx, 330, 860, 420, 120, CREAM, 30); box(ctx, 500, 800, 80, 70, tint(P.S, 0.2), 10); line(ctx, [[860, 620], [1040, 620]], P.prop3, 12); box(ctx, 880, 630, 120, 260, P.prop2, 12); },
-    'living room': (ctx, P, L) => { windowAt(ctx, 640, 330, 300, 300, L.tod, P, true); box(ctx, 120, 360, 170, 130, tint(P.S, 0.5), 8); box(ctx, 320, 400, 130, 170, '#FFD6A5', 8); box(ctx, 60, 860, 640, 230, P.prop, 40); box(ctx, 90, 780, 580, 140, P.prop2, 40); box(ctx, 40, 820, 90, 260, P.prop3, 30); box(ctx, 640, 820, 90, 260, P.prop3, 30); line(ctx, [[880, 1150], [880, 700]], INK, 8, false); ctx.beginPath(); ctx.moveTo(820, 700); ctx.lineTo(850, 610); ctx.lineTo(910, 610); ctx.lineTo(940, 700); ctx.closePath(); fillOut(ctx, tint(P.D, 0.2)); plant(ctx, 1000, 1150, 0.9, P); },
+    'coffee shop': (ctx, P, L, t) => { const I = L.item; I('window', [70, 330, 300, 360], () => windowAt(ctx, 70, 330, 300, 360, L.tod, P)); I('plant', [186, 588, 92, 112], () => plant(ctx, 220, 700, 0.8, P));
+      I('menu board', [600, 300, 360, 250], () => { box(ctx, 600, 300, 360, 250, '#2F5D62', 16); for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(640, 360 + i * 46); ctx.lineTo(640 + 120 + hash(i) * 150, 360 + i * 46); ctx.lineWidth = 7; ctx.strokeStyle = '#F4F1DE'; ctx.lineCap = 'round'; ctx.stroke(); } }); lamp(ctx, 470, 240, P); lamp(ctx, 830, 640, P, false);
+      box(ctx, -40, 900, 1160, 250, P.prop, 8); box(ctx, -40, 880, 1160, 40, P.prop2, 8);
+      I('espresso machine', [690, 760, 170, 130], () => { box(ctx, 690, 760, 170, 130, tint(P.D, 0.1), 14); box(ctx, 715, 790, 120, 36, P.prop3, 8); line(ctx, [[745, 826], [745, 860]], INK, 6, false); line(ctx, [[805, 826], [805, 860]], INK, 6, false); });
+      I('cups', [918, 821, 104, 59], () => { cup(ctx, 940, 880, 0.55, P); cup(ctx, 1000, 880, 0.55, P); }); },
+    kitchen: (ctx, P, L) => { windowAt(ctx, 380, 330, 320, 300, L.tod, P, true); box(ctx, 60, 520, 240, 630, CREAM, 20); line(ctx, [[260, 700], [260, 800]], INK, 8, false); [P.D, '#FFD6A5', P.prop].forEach((c, i) => circ(ctx, 120 + i * 50, 600 + (i % 2) * 40, 14, c, 4)); box(ctx, 330, 860, 760, 290, P.prop, 10); box(ctx, 330, 840, 760, 36, P.prop2, 8); L.item('kettle', [790, 726, 120, 114], () => { box(ctx, 790, 760, 120, 80, CREAM, 18); ctx.beginPath(); ctx.arc(850, 760, 34, Math.PI, 0); fillOut(ctx, tint(P.S, 0.3)); }); L.item('toaster', [430, 760, 200, 80], () => box(ctx, 430, 760, 200, 80, tint(P.D, 0.2), 10)); },
+    bedroom: (ctx, P, L) => { windowAt(ctx, 600, 320, 320, 320, L.tod, P, true); box(ctx, 60, 820, 520, 260, P.prop2, 24); box(ctx, 60, 700, 70, 400, P.prop3, 14); box(ctx, 100, 840, 140, 70, CREAM, 30); box(ctx, 230, 860, 360, 220, tint(P.D, 0.15), 24); for (let i = 0; i < 3; i++) box(ctx, 260 + i * 110, 900, 70, 70, tint(P.S, 0.55), 12); L.item('nightstand lamp', [640, 736, 120, 414], () => { box(ctx, 640, 900, 120, 250, P.prop, 10); lamp(ctx, 700, 780, P); }); L.item('poster', [160, 360, 220, 260], () => { box(ctx, 160, 360, 220, 260, tint(P.S, 0.6), 10); circ(ctx, 270, 470, 60, '#FFD6A5', 5); }); },
+    'bathroom mirror': (ctx, P, L) => { for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) { ctx.fillStyle = (r + c) % 2 ? tint(P.D, 0.5) : tint(P.D, 0.6); ctx.fillRect(c * 130 - 40, 600 + r * 70, 130, 70); } circ(ctx, 540, 520, 230, tint(P.S, 0.8), 10); ctx.save(); ctx.beginPath(); ctx.arc(540, 520, 214, 0, TAU); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(380, 300, 60, 500); ctx.fillRect(470, 300, 24, 500); ctx.restore(); box(ctx, 330, 860, 420, 120, CREAM, 30); L.item('soap', [500, 800, 80, 70], () => box(ctx, 500, 800, 80, 70, tint(P.S, 0.2), 10)); L.item('towel', [860, 614, 180, 276], () => { line(ctx, [[860, 620], [1040, 620]], P.prop3, 12); box(ctx, 880, 630, 120, 260, P.prop2, 12); }); },
+    'living room': (ctx, P, L) => { windowAt(ctx, 640, 330, 300, 300, L.tod, P, true); L.item('frames', [120, 360, 330, 210], () => { box(ctx, 120, 360, 170, 130, tint(P.S, 0.5), 8); box(ctx, 320, 400, 130, 170, '#FFD6A5', 8); }); box(ctx, 60, 860, 640, 230, P.prop, 40); box(ctx, 90, 780, 580, 140, P.prop2, 40); box(ctx, 40, 820, 90, 260, P.prop3, 30); box(ctx, 640, 820, 90, 260, P.prop3, 30); line(ctx, [[880, 1150], [880, 700]], INK, 8, false); ctx.beginPath(); ctx.moveTo(820, 700); ctx.lineTo(850, 610); ctx.lineTo(910, 610); ctx.lineTo(940, 700); ctx.closePath(); fillOut(ctx, tint(P.D, 0.2)); plant(ctx, 1000, 1150, 0.9, P); },
     classroom: (ctx, P, L, t) => { box(ctx, 120, 320, 840, 380, '#2F6F62', 16); box(ctx, 120, 700, 840, 30, P.prop2, 6); for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(200, 400 + i * 80); ctx.quadraticCurveTo(400, 380 + i * 90, 560 + i * 60, 400 + i * 80); ctx.lineWidth = 7; ctx.strokeStyle = '#F4F1DE'; ctx.stroke(); } clockAt(ctx, 960, 250, 50, t); [[180, 960], [540, 960], [900, 960]].forEach(([x, y]) => { box(ctx, x - 130, y, 260, 30, P.prop, 8); line(ctx, [[x - 100, y + 30], [x - 100, FLOOR + 20]], P.prop3, 10); line(ctx, [[x + 100, y + 30], [x + 100, FLOOR + 20]], P.prop3, 10); }); },
-    office: (ctx, P, L) => { box(ctx, 600, 320, 360, 340, SKY[L.tod] ? SKY[L.tod][1] : '#E3F6FF', 12); for (let i = 0; i < 8; i++) { ctx.fillStyle = tint(P.S, 0.35); ctx.fillRect(606, 330 + i * 40, 348, 18); } box(ctx, 80, 900, 560, 40, P.prop, 10); line(ctx, [[120, 940], [120, FLOOR + 30]], P.prop3, 12); line(ctx, [[600, 940], [600, FLOOR + 30]], P.prop3, 12); box(ctx, 220, 730, 240, 160, INK, 14); box(ctx, 236, 746, 208, 128, tint(P.S, 0.6), 8); line(ctx, [[340, 890], [340, 905]], INK, 14, false); plant(ctx, 900, 1150, 1.1, P); },
+    office: (ctx, P, L) => { box(ctx, 600, 320, 360, 340, SKY[L.tod] ? SKY[L.tod][1] : '#E3F6FF', 12); for (let i = 0; i < 8; i++) { ctx.fillStyle = tint(P.S, 0.35); ctx.fillRect(606, 330 + i * 40, 348, 18); } box(ctx, 80, 900, 560, 40, P.prop, 10); line(ctx, [[120, 940], [120, FLOOR + 30]], P.prop3, 12); line(ctx, [[600, 940], [600, FLOOR + 30]], P.prop3, 12); L.item('monitor', [220, 730, 240, 175], () => { box(ctx, 220, 730, 240, 160, INK, 14); box(ctx, 236, 746, 208, 128, tint(P.S, 0.6), 8); line(ctx, [[340, 890], [340, 905]], INK, 14, false); }); plant(ctx, 900, 1150, 1.1, P); },
     'bus stop': (ctx, P, L, t, feat) => { const s = SKY[L.tod] || SKY.day; const g = ctx.createLinearGradient(0, 0, 0, FLOOR); g.addColorStop(0, s[0]); g.addColorStop(1, s[1]); ctx.fillStyle = g; ctx.fillRect(-1500, -1500, 4080, FLOOR + 1500); [[80, 520, 160], [300, 600, 120], [760, 480, 190], [960, 580, 130]].forEach(([x, y, w]) => box(ctx, x, y, w, FLOOR - y, tint(P.S, 0.35 + hash(x) * 0.2), 6)); box(ctx, 140, 640, 520, 30, P.prop, 8); line(ctx, [[160, 670], [160, FLOOR + 20]], P.prop3, 12); line(ctx, [[640, 670], [640, FLOOR + 20]], P.prop3, 12); box(ctx, 200, 960, 400, 26, P.prop2, 10); line(ctx, [[880, 400], [880, FLOOR + 30]], INK, 10, false); circ(ctx, 880, 400, 54, tint(P.D, 0.1), 7);
       if (feat === 'arriving bus') { const bx = 1180 - 260 * ease(((t || 0) % 6) / 6); box(ctx, bx, 700, 700, 420, '#FFC94A', 30); box(ctx, bx + 40, 760, 200, 140, '#BFE6FF', 12); } },
     'park bench': (ctx, P, L) => { const s = SKY[L.tod] || SKY.day; const g = ctx.createLinearGradient(0, 0, 0, FLOOR); g.addColorStop(0, s[0]); g.addColorStop(1, s[1]); ctx.fillStyle = g; ctx.fillRect(-1500, -1500, 4080, FLOOR + 1500); [[150, 620], [930, 560]].forEach(([x, y]) => { line(ctx, [[x, y + 100], [x, FLOOR + 10]], P.prop3, 26); circ(ctx, x, y, 150, '#6CCB86', 7); circ(ctx, x - 80, y + 60, 90, '#7FD99A', 6); }); line(ctx, [[760, 420], [760, FLOOR + 20]], INK, 10, false); circ(ctx, 760, 410, 40, '#FFF3B0', 6); box(ctx, 290, 930, 520, 40, P.prop, 12); box(ctx, 290, 860, 520, 36, P.prop, 12); line(ctx, [[330, 970], [330, FLOOR + 30]], P.prop3, 12); line(ctx, [[770, 970], [770, FLOOR + 30]], P.prop3, 12); },
     'grocery aisle': (ctx, P, L) => { shelf(ctx, -60, 360, 400, 7, P, 1); shelf(ctx, 740, 360, 400, 7, P, 5); box(ctx, 400, 230, 280, 90, tint(P.S, 0.2), 14); line(ctx, [[460, 0], [460, 230]], INK, 5, false); line(ctx, [[620, 0], [620, 230]], INK, 5, false); box(ctx, 430, 980, 220, 130, 'rgba(255,255,255,0.4)', 10); circ(ctx, 460, 1130, 18, INK, 3); circ(ctx, 620, 1130, 18, INK, 3); },
-    gym: (ctx, P, L) => { box(ctx, 80, 330, 920, 420, tint(P.S, 0.78), 12); ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(200, 340, 40, 400); ctx.fillRect(270, 340, 18, 400); box(ctx, 120, 880, 520, 30, P.prop3, 8); for (let i = 0; i < 5; i++) { circ(ctx, 170 + i * 100, 860, 24, P.prop, 5); } box(ctx, 840, 700, 140, 450, tint(P.S, 0.5), 18); box(ctx, 860, 600, 100, 110, '#BFE6FF', 30); },
-    'restaurant booth': (ctx, P, L) => { lamp(ctx, 540, 380, P); box(ctx, 40, 640, 220, 520, P.prop, 40); box(ctx, 820, 640, 220, 520, P.prop, 40); box(ctx, 300, 880, 480, 34, P.prop2, 12); line(ctx, [[540, 914], [540, FLOOR + 30]], P.prop3, 16); box(ctx, 600, 800, 70, 80, CREAM, 8); windowAt(ctx, 330, 300, 420, 170, L.tod, P); },
+    gym: (ctx, P, L) => { box(ctx, 80, 330, 920, 420, tint(P.S, 0.78), 12); ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillRect(200, 340, 40, 400); ctx.fillRect(270, 340, 18, 400); box(ctx, 120, 880, 520, 30, P.prop3, 8); L.item('dumbbells', [146, 836, 448, 48], () => { for (let i = 0; i < 5; i++) { circ(ctx, 170 + i * 100, 860, 24, P.prop, 5); } }); box(ctx, 840, 700, 140, 450, tint(P.S, 0.5), 18); box(ctx, 860, 600, 100, 110, '#BFE6FF', 30); },
+    'restaurant booth': (ctx, P, L) => { lamp(ctx, 540, 380, P); box(ctx, 40, 640, 220, 520, P.prop, 40); box(ctx, 820, 640, 220, 520, P.prop, 40); box(ctx, 300, 880, 480, 34, P.prop2, 12); line(ctx, [[540, 914], [540, FLOOR + 30]], P.prop3, 16); L.item('cup', [600, 800, 70, 80], () => box(ctx, 600, 800, 70, 80, CREAM, 8)); windowAt(ctx, 330, 300, 420, 170, L.tod, P); },
     rooftop: (ctx, P, L) => { const s = SKY[L.tod] || SKY.evening; const g = ctx.createLinearGradient(0, 0, 0, FLOOR); g.addColorStop(0, s[0]); g.addColorStop(1, s[1]); ctx.fillStyle = g; ctx.fillRect(-1500, -1500, 4080, FLOOR + 1500); for (let i = 0; i < 9; i++) { const x = -60 + i * 140; const h = 200 + hash(i) * 300; box(ctx, x, 980 - h, 120, h + 40, tint(P.S, 0.3 + hash(i + 3) * 0.3), 6); for (let k = 0; k < 4; k++) { ctx.fillStyle = '#FFF3B0'; ctx.fillRect(x + 20 + (k % 2) * 50, 1000 - h + 30 + Math.floor(k / 2) * 60, 24, 30); } } ctx.beginPath(); ctx.moveTo(-40, 300); ctx.quadraticCurveTo(540, 420, 1120, 300); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.stroke(); for (let i = 0; i < 11; i++) { const x = i * 108; const y = 300 + Math.sin((i / 10) * Math.PI) * 60; circ(ctx, x, y + 14, 12, ['#FFD27A', '#FFAFCC', '#A0E7E5'][i % 3], 4); } box(ctx, -40, 1000, 1160, 24, P.prop3, 6); for (let i = 0; i < 12; i++) line(ctx, [[i * 100, 1010], [i * 100, FLOOR]], P.prop3, 8, false); },
     hallway: (ctx, P, L, t, feat, open) => { [[60, 'A'], [420, 'B'], [780, 'C']].forEach(([x], i) => door(ctx, x, 520, 240, 630, P, i === 2 ? open : 0)); for (let i = 0; i < 3; i++) lamp(ctx, 180 + i * 360, 300, P); box(ctx, 200, 1180, 680, 120, tint(P.S, 0.4), 30); },
     car: (ctx, P, L) => { box(ctx, -60, 260, 1200, 560, (SKY[L.tod] || SKY.day)[1], 60); box(ctx, -60, 780, 1200, 500, P.prop, 30); circ(ctx, 300, 760, 150, null, 22); line(ctx, [[300, 760], [300, 900]], INK, 18, false); box(ctx, 620, 820, 300, 90, P.prop2, 16); },
     library: (ctx, P, L) => { shelf(ctx, 40, 300, 330, 7, P, 2); shelf(ctx, 710, 300, 330, 7, P, 9); box(ctx, 430, 320, 220, 90, CREAM, 12); line(ctx, [[470, 365], [610, 365]], INK, 8, false); lamp(ctx, 540, 640, P); box(ctx, 380, 920, 320, 30, P.prop, 10); line(ctx, [[540, 950], [540, FLOOR + 20]], P.prop3, 14); },
-    subway: (ctx, P, L) => { box(ctx, -40, 300, 1160, 380, tint(P.S, 0.25), 20); for (let i = 0; i < 3; i++) box(ctx, 60 + i * 340, 360, 280, 240, shade(P.S, 0.35), 30); line(ctx, [[-40, 250], [1120, 250]], INK, 8, false); for (let i = 0; i < 6; i++) { line(ctx, [[90 + i * 180, 250], [90 + i * 180, 330]], INK, 5, false); circ(ctx, 90 + i * 180, 350, 22, null, 6); } box(ctx, -40, 880, 1160, 120, P.prop, 30); box(ctx, 380, 700, 320, 120, CREAM, 10); ctx.beginPath(); ctx.moveTo(410, 760); ctx.bezierCurveTo(480, 700, 560, 820, 670, 740); ctx.lineWidth = 8; ctx.strokeStyle = P.D; ctx.stroke(); },
+    subway: (ctx, P, L) => { box(ctx, -40, 300, 1160, 380, tint(P.S, 0.25), 20); for (let i = 0; i < 3; i++) box(ctx, 60 + i * 340, 360, 280, 240, shade(P.S, 0.35), 30); line(ctx, [[-40, 250], [1120, 250]], INK, 8, false); for (let i = 0; i < 6; i++) { line(ctx, [[90 + i * 180, 250], [90 + i * 180, 330]], INK, 5, false); circ(ctx, 90 + i * 180, 350, 22, null, 6); } box(ctx, -40, 880, 1160, 120, P.prop, 30); L.item('route map', [380, 700, 320, 120], () => { box(ctx, 380, 700, 320, 120, CREAM, 10); ctx.beginPath(); ctx.moveTo(410, 760); ctx.bezierCurveTo(480, 700, 560, 820, 670, 740); ctx.lineWidth = 8; ctx.strokeStyle = P.D; ctx.stroke(); }); },
     stairwell: (ctx, P, L) => { windowAt(ctx, 700, 280, 240, 300, L.tod, P); for (let i = 0; i < 8; i++) box(ctx, 80 + i * 70, 1150 - (i + 1) * 70, 1000, 70, i % 2 ? P.prop2 : tint(P.S, 0.45), 4); line(ctx, [[80, 1040], [660, 480]], P.prop3, 14); },
-    elevator: (ctx, P, L, t, feat, open) => { box(ctx, 220, 360, 640, 790, tint(P.S, 0.55), 12); const o = clamp(open || 0, 0, 1) * 150; box(ctx, 240 - o, 380, 300, 770, tint(P.D, 0.25), 6); box(ctx, 540 + o, 380, 300, 770, tint(P.D, 0.25), 6); box(ctx, 900, 640, 90, 220, P.prop2, 14); for (let i = 0; i < 4; i++) circ(ctx, 945, 680 + i * 46, 14, i === 2 ? '#FFD27A' : CREAM, 4); box(ctx, 440, 270, 200, 70, INK, 12); },
-    'party kitchen': (ctx, P, L) => { box(ctx, 60, 520, 230, 630, CREAM, 20); for (let i = 0; i < 9; i++) { const x = 330 + i * 80; ctx.beginPath(); ctx.moveTo(x, 300); ctx.lineTo(x + 40, 370); ctx.lineTo(x + 80, 300); ctx.closePath(); fillOut(ctx, [P.D, tint(P.S, 0.3), '#FFD6A5'][i % 3], 4); } box(ctx, 330, 880, 760, 270, P.prop, 10); box(ctx, 330, 860, 760, 34, P.prop2, 8); [[460, '#FFAFCC'], [560, '#A0E7E5'], [660, '#FFD6A5']].forEach(([x, c]) => circ(ctx, x, 820, 30, c, 5)); [[880, 420, '#FFAFCC'], [960, 470, '#A0E7E5'], [1010, 400, '#B5E48C']].forEach(([x, y, c]) => { line(ctx, [[x, y + 60], [x - 10, 860]], INK, 3, false); ctx.beginPath(); ctx.ellipse(x, y, 44, 54, 0, 0, TAU); fillOut(ctx, c, 5); }); },
+    elevator: (ctx, P, L, t, feat, open) => { box(ctx, 220, 360, 640, 790, tint(P.S, 0.55), 12); const o = clamp(open || 0, 0, 1) * 150; box(ctx, 240 - o, 380, 300, 770, tint(P.D, 0.25), 6); box(ctx, 540 + o, 380, 300, 770, tint(P.D, 0.25), 6); L.item('button panel', [900, 640, 90, 220], () => { box(ctx, 900, 640, 90, 220, P.prop2, 14); for (let i = 0; i < 4; i++) circ(ctx, 945, 680 + i * 46, 14, i === 2 ? '#FFD27A' : CREAM, 4); }); box(ctx, 440, 270, 200, 70, INK, 12); },
+    'party kitchen': (ctx, P, L) => { box(ctx, 60, 520, 230, 630, CREAM, 20); for (let i = 0; i < 9; i++) { const x = 330 + i * 80; ctx.beginPath(); ctx.moveTo(x, 300); ctx.lineTo(x + 40, 370); ctx.lineTo(x + 80, 300); ctx.closePath(); fillOut(ctx, [P.D, tint(P.S, 0.3), '#FFD6A5'][i % 3], 4); } box(ctx, 330, 880, 760, 270, P.prop, 10); box(ctx, 330, 860, 760, 34, P.prop2, 8); L.item('cupcakes', [430, 790, 260, 60], () => [[460, '#FFAFCC'], [560, '#A0E7E5'], [660, '#FFD6A5']].forEach(([x, c]) => circ(ctx, x, 820, 30, c, 5))); [[880, 420, '#FFAFCC'], [960, 470, '#A0E7E5'], [1010, 400, '#B5E48C']].forEach(([x, y, c]) => { line(ctx, [[x, y + 60], [x - 10, 860]], INK, 3, false); ctx.beginPath(); ctx.ellipse(x, y, 44, 54, 0, 0, TAU); fillOut(ctx, c, 5); }); },
     'waiting room': (ctx, P, L, t) => { clockAt(ctx, 540, 330, 70, t); box(ctx, 640, 760, 400, 390, P.prop, 14); box(ctx, 640, 740, 400, 40, P.prop2, 10); for (let i = 0; i < 3; i++) { const x = 80 + i * 170; box(ctx, x, 900, 140, 40, P.prop2, 12); box(ctx, x, 780, 140, 130, P.prop2, 20); line(ctx, [[x + 20, 940], [x + 20, FLOOR + 20]], P.prop3, 8); line(ctx, [[x + 120, 940], [x + 120, FLOOR + 20]], P.prop3, 8); } plant(ctx, 600, 1150, 0.8, P); },
     beach: (ctx, P, L) => { const s = SKY[L.tod] || SKY.day; const g = ctx.createLinearGradient(0, 0, 0, 900); g.addColorStop(0, s[0]); g.addColorStop(1, s[1]); ctx.fillStyle = g; ctx.fillRect(-1500, -1500, 4080, 2400); circ(ctx, 820, 330, 70, '#FFE066', 6); ctx.fillStyle = '#5FC3E4'; ctx.fillRect(-1500, 820, 4080, 330); ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 6; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(60 + i * 180, 900 + (i % 2) * 60); ctx.quadraticCurveTo(100 + i * 180, 880 + (i % 2) * 60, 140 + i * 180, 900 + (i % 2) * 60); ctx.stroke(); } line(ctx, [[250, 660], [250, FLOOR + 40]], INK, 10, false); ctx.beginPath(); ctx.moveTo(60, 700); ctx.quadraticCurveTo(250, 520, 440, 700); ctx.closePath(); fillOut(ctx, P.D); box(ctx, 780, 1060, 160, 90, '#FFE3A3', 10); },
   };
-  function background(ctx, plan, P, locId, t, open) {
+  function background(ctx, plan, P, locId, t, open, item) {
     const L = (plan.locations || []).find((l) => l.id === locId) || { id: locId, timeOfDay: 'day', suspenseFeature: '' };
     const tod = L.timeOfDay || 'day';
     // wall + floor (flat friendly colour; lighting is colour: a soft support-tint glow, no heavy shade)
@@ -97,7 +100,7 @@
     const gl = ctx.createRadialGradient(540, 520, 60, 540, 620, 900); gl.addColorStop(0, 'rgba(255,255,255,0.35)'); gl.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = gl; ctx.fillRect(-1500, -1500, 4080, FLOOR + 1500);
     const fg = ctx.createLinearGradient(0, FLOOR, 0, 1920); fg.addColorStop(0, P.floor2); fg.addColorStop(1, P.floor); ctx.fillStyle = fg; ctx.fillRect(-1500, FLOOR, 4080, 2500);
     ctx.beginPath(); ctx.moveTo(-1500, FLOOR); ctx.lineTo(2580, FLOOR); ctx.lineWidth = OUT; ctx.strokeStyle = INK; ctx.stroke();
-    (BG[locId] || BG['living room'])(ctx, P, { tod }, t, L.suspenseFeature, open);
+    (BG[locId] || BG['living room'])(ctx, P, { tod, item: item || ((id, r, fn) => fn()) }, t, L.suspenseFeature, open);
   }
 
   // ---------------- clue objects ----------------
@@ -315,6 +318,33 @@
 
   // ---------------- shots ----------------
   const XPOS = { left: 300, center: 540, right: 780 };
+  function placeChars(st) { const used = new Set(); return (st.chars || []).map((sc) => { let x = XPOS[sc.x] || 540; if (sc.far) x = sc.x === 'left' ? 170 : sc.x === 'center' ? 540 : 910; while ([...used].some((u) => Math.abs(u - x) < 160)) x += x > 540 ? -170 : 170; used.add(x); return { sc, x }; }); }
+  // every head position a location's shots can show (world space, wide-shot coordinates): standing / sitting / hiding heights,
+  // look, breath, a step or lean in motion, a jump; far figures are drawn at 0.62 scale about FEET - 40. Box [x0, y0, x1, y1].
+  const WALL_CLEAR = 22; // clear zone around a head (world px)
+  function headZones(plan) {
+    const z = {}; (plan.panels || []).forEach((pn) => { if (pn.shot === 'insert') return; const st = pn.stage || {}; const placed = placeChars(st); const n = placed.length;
+      placed.forEach((q) => { const sc = q.sc; const dir = sc.facing === 'left' ? -1 : sc.facing === 'right' ? 1 : 0; const moving = sc.id === st.focus || n === 1 || !st.focus;
+        let lo = -8; let hi = 8; const add = (d) => { lo = Math.min(lo, d - 8); hi = Math.max(hi, d + 8); };
+        if (moving && st.motion === 'step') add(34 * (dir || 1)); if (sc.pose === 'lean') add(Math.sin(0.16) * TORSO * (dir || 1)); if (moving && st.motion === 'lean') add(Math.sin(0.26) * TORSO * (dir || 1));
+        const crouch = sc.pose === 'hide' ? 0.82 : 1; const cy = sc.pose === 'sit' ? FEET - 150 - TORSO - NECK - HR : FEET - LEG * crouch - TORSO * crouch - NECK - HR; const jump = moving && st.motion === 'jump' ? 46 : 0;
+        let box = [q.x + lo - HR, cy - HR - jump - 8, q.x + hi + HR, cy + HR + 4];
+        if (sc.far) { const k = 0.62; const ay = FEET - 40; box = [q.x + (box[0] - q.x) * k, ay + (box[1] - ay) * k, q.x + (box[2] - q.x) * k, ay + (box[3] - ay) * k]; }
+        (z[pn.location] = z[pn.location] || []).push(box.map((v, i) => v + (i < 2 ? -WALL_CLEAR : WALL_CLEAR)));
+      }); });
+    return z;
+  }
+  // smallest sideways shift (kept inside the set) that clears every head zone; a moved object avoids landing on other
+  // wall objects when it can
+  function clearShift(r, zones, others) {
+    const hit = (dx, list) => list.some((b) => r[0] + dx < b[2] && r[0] + dx + r[2] > b[0] && r[1] < b[3] && r[1] + r[3] > b[1]);
+    const ok = (dx) => r[0] + dx >= -60 && r[0] + dx + r[2] <= 1140;
+    const cands = [0]; for (let d = 10; d <= 1180; d += 10) cands.push(d, -d);
+    const oth = others.map((o) => [o[0], o[1], o[0] + o[2], o[1] + o[3]]); const movedOth = oth.filter((o, i) => others[i].moved);
+    if (!hit(0, zones) && !hit(0, movedOth)) return { dx: 0, rect: r.slice() }; // clear of every head (and of moved objects): stays put (window-sill plant etc.)
+    const pick = cands.find((dx) => ok(dx) && !hit(dx, zones) && !hit(dx, oth)) ?? cands.find((dx) => ok(dx) && !hit(dx, zones));
+    return pick === undefined ? null : { dx: pick, rect: [r[0] + pick, r[1], r[2], r[3]] };
+  }
   class StoryRenderer {
     constructor(canvas) { this.c = canvas; this.ctx = canvas.getContext('2d'); this.layout = null; }
     // o: { timing (story.timing result), lines: [{panel, who, start, dur, text}] (video time), captions: true }
@@ -322,6 +352,7 @@
       o = o || {}; this.p = plan; this.P = paletteOf(plan); this.tm = o.timing || VTS.story.timing(plan, o.lineDur); this.lines = o.lines || []; this.opt = o;
       this.chars = new Map(plan.characters.map((c, i) => [c.id, Object.assign({}, c, { itemColor: i % 2 ? tint(plan.colorScript.dominant.hex, -0) : tint(plan.colorScript.support.hex, 0.3) })]));
       this.total = this.tm.total; this.panels = plan.panels;
+      this.zones = headZones(plan); this.shift = {};
       // arm pose per figure per panel (saved by the engine, or mapped now from ACTION / BOARD NOTES for older plans)
       const S = VTS.story; this.poses = plan.panels.map((pn) => new Map(((pn.stage && pn.stage.chars) || []).map((sc) => [sc.id, sc.arms ? { arms: sc.arms, holds: sc.holds || null } : S && S.poseFor ? S.poseFor(plan, pn, sc) : { arms: 'idle', holds: null }])));
       return this;
@@ -353,8 +384,7 @@
     shot(ctx, pn, i, local, mp, sh, t) {
       const P = this.P; const accent = !!pn.accentAllowed; const st = pn.stage || { chars: [] };
       const k = pn.mood === 'snap' ? 0 : clamp((pn.tension - 1) / 4, 0, 1); const motion = st.motion || 'none';
-      const n = (st.chars || []).length; const used = new Set();
-      const placed = (st.chars || []).map((sc, j) => { let x = XPOS[sc.x] || 540; if (sc.far) x = sc.x === 'left' ? 170 : sc.x === 'center' ? 540 : 910; while ([...used].some((u) => Math.abs(u - x) < 160)) x += x > 540 ? -170 : 170; used.add(x); return { sc, x }; });
+      const n = (st.chars || []).length; const placed = placeChars(st);
       const focusP = placed.find((q) => q.sc.id === st.focus) || placed.find((q) => !q.sc.far) || placed[0] || { x: XPOS[st.clue.x] || 540 };
       const clueX = XPOS[st.clue && st.clue.x] || 540;
       if (pn.shot === 'insert') return this.insert(ctx, pn, local, mp, t, accent, placed);
@@ -362,7 +392,7 @@
       const sx = this.c.width / W;
       ctx.setTransform(sx * cam.s, 0, 0, sx * cam.s, sx * (cam.tx - cam.fx * cam.s), sx * (cam.ty - cam.fy * cam.s));
       const open = motion === 'door' ? ease(mp) : 0;
-      background(ctx, this.p, P, pn.location, t, open);
+      background(ctx, this.p, P, pn.location, t, open, (id, r, fn) => this.wallItem(ctx, pn.location, id, r, fn));
       if (motion === 'door' && !['hallway', 'elevator'].includes(pn.location)) door(ctx, 900, 560, 200, 590, P, open);
       // props for seated characters
       placed.forEach((q) => { if (q.sc.pose === 'sit' && !q.sc.far) stool(ctx, q.x, P); });
@@ -385,6 +415,16 @@
       // soft colour vignette (lighting is colour, not shade); held frames feel held
       ctx.setTransform(sx, 0, 0, sx, 0, 0); const vg = ctx.createRadialGradient(540, 860, 520, 540, 900, 1250); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, hexA(shade(P.D, 0.35), pn.silence ? 0.32 : 0.18)); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
       if (accent && pn.mood !== 'snap' && pn.tension >= 4) { ctx.strokeStyle = hexA(P.A, 0.55 + 0.25 * Math.sin(t * 5)); ctx.lineWidth = 14; ctx.strokeRect(7, 7, W - 14, H - 14); }
+    }
+    // a background wall object (sign, machine, frame, lamp...) is drawn shifted sideways, the same way in every shot of the location,
+    // so it never sits behind any character's head anywhere in the story (it is hidden only when no clear spot exists); its drawn
+    // rect is recorded in screen space for the wall-vs-head QA (wallCheck)
+    wallItem(ctx, loc, id, r, fn) {
+      const key = loc + '|' + id; if (!(key in this.shift)) this.shift[key] = clearShift(r, this.zones[loc] || [], Object.entries(this.shift).filter(([k, v]) => k.startsWith(loc + '|') && v && v.rect).map(([, v]) => Object.assign(v.rect.slice(), { moved: v.dx !== 0 })));
+      const sh = this.shift[key]; if (!sh) { this.layout.wallHidden = (this.layout.wallHidden || []).concat(id); return; }
+      ctx.save(); ctx.translate(sh.dx, 0); fn(); ctx.restore();
+      const m = ctx.getTransform(); const k0 = this.c.width / W; const scr = (x, y) => [(m.a * x + m.c * y + m.e) / k0, (m.b * x + m.d * y + m.f) / k0]; const a = scr(r[0] + sh.dx, r[1]); const b = scr(r[0] + sh.dx + r[2], r[1] + r[3]);
+      (this.layout.wall = this.layout.wall || []).push({ id, dx: sh.dx, box: [+a[0].toFixed(1), +a[1].toFixed(1), +(b[0] - a[0]).toFixed(1), +(b[1] - a[1]).toFixed(1)] });
     }
     person(ctx, q, scale, o, cam, sx) {
       const c = this.chars.get(q.sc.id); if (!c) return;
@@ -496,10 +536,15 @@
     }
     return issues;
   }
+  // final-QA check: no background wall object (sign, machine, frame, lamp...) behind or over any head circle (4 px margin, screen)
+  function wallCheck(layout) {
+    const issues = []; for (const w of layout.wall || []) for (const g of layout.figures || []) if (g.head && boxHitsCircle(w.box, g.head, 4)) issues.push({ t: +layout.t.toFixed(2), item: w.id, head: g.id, box: w.box, headCircle: g.head });
+    return issues;
+  }
   function partialLabel(s) { const w = String(s || '').split(/\s+/).filter(Boolean); if (!w.length) return ''; return w.length > 1 ? w.slice(0, Math.ceil(w.length / 2)).join(' ') + ' …' : w[0].slice(0, Math.max(2, Math.ceil(w[0].length / 2))) + '…'; }
   function wrap(ctx, text, maxW) { const ws = String(text || '').split(/\s+/).filter(Boolean); const out = []; let cur = ''; for (const w of ws) { const tst = cur ? cur + ' ' + w : w; if (ctx.measureText(tst).width > maxW && cur) { out.push(cur); cur = w; } else cur = tst; } if (cur) out.push(cur); return out; }
   // overlap check used by QA: any text box over any face box
   function overlaps(layout) { const hit = []; for (const f of layout.faces) for (const b of layout.text) { if (f.x < b.x + b.w && f.x + f.w > b.x && f.y < b.y + b.h && f.y + f.h > b.y) hit.push({ face: f.id, text: b.kind }); } return hit; }
 
-  VTS.storyDraw = { StoryRenderer, overlaps, captionCheck, poseCheck, paletteOf, POSE_ARMS, W, H, SAFE, CAP_TOP };
+  VTS.storyDraw = { StoryRenderer, overlaps, captionCheck, poseCheck, wallCheck, headZones, clearShift, paletteOf, POSE_ARMS, W, H, SAFE, CAP_TOP };
 }());

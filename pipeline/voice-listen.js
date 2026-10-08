@@ -10,7 +10,8 @@ const MODELS = (process.env.LISTEN_MODELS || 'gemini-3.8-flash,gemini-3.7-flash,
 const ASK = 'You are a blind listening test. Listen ONLY to the audio clip (a single short line of speech). Do not guess from any context. '
   + 'Answer strictly as JSON: {"gender":"male"|"female"|"unclear","confidence":0..1,"age":"child"|"teen"|"adult"|"unclear",'
   + '"words":"exactly the words you hear, in order, including fillers, false starts and repeats; write a word you cannot make out as [?]",'
-  + '"unclearWords":["any word that is weak, swallowed or ambiguous, with what it could be"],"notes":"one short sentence on how the voice sounds"}';
+  + '"unclearWords":["any word that is weak, swallowed or ambiguous, with what it could be"],"delivery":"flat"|"natural"|"expressive","robotic":true|false,'
+  + '"notes":"one short sentence on how the voice sounds"}';
 async function ask(model, wav) {
   const body = { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: fs.readFileSync(wav).toString('base64') } }, { text: ASK }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } };
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: JSON.stringify(body), signal: AbortSignal.timeout(Number(process.env.LISTEN_TIMEOUT_MS || 60000)) });

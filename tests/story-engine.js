@@ -80,6 +80,13 @@ let pass = 0; let fail = 0; const ok = (name, c, v) => { if (c) pass++; else fai
     ok('props: a held note sits below the chin in every raised-hands pose (never over a head circle, still on the hands)', !over.length && heldN4 > 0, { issues: over.slice(0, 3), heldN4 });
     const bad = { t: 1, figures: [{ id: 'a', head: { x: 500, y: 800, r: 58 }, held: { kind: 'note', grip: [500, 860], handAt: [500, 860], box: [452, 780, 95, 80] } }] };
     ok('props QA: a note drawn over the face fails the head-circle check', V.storyDraw.poseCheck(bad).some((q) => q.issue === 'held prop over a head')); }
+  // background wall objects never sit behind a head: story-sample-1's espresso machine sat behind Maya's head at 'right' (0:21-0:28)
+  { const st5 = JSON.parse(JSON.stringify(plan)); st5.panels.forEach((pn, i) => { pn.location = 'coffee shop'; if (pn.shot === 'insert') pn.shot = 'medium'; const c0 = (pn.stage.chars || [])[0]; if (c0) { c0.x = ['left', 'center', 'right'][i % 3]; c0.far = false; } });
+    S.mapPoses(st5); const tm5 = S.timing(st5); const r5 = new V.storyDraw.StoryRenderer(H.canvas()).setup(st5, { timing: tm5 });
+    let wiss = []; const moved = {}; for (let f = 0; f < Math.ceil(tm5.endCard.start * 24); f += 4) { const L = r5.draw(f / 24); wiss = wiss.concat(V.storyDraw.wallCheck(L)); (L.wall || []).forEach((w) => { moved[w.id] = w.dx; }); }
+    ok('background: no wall object behind any head in any frame (the espresso machine moves off the right-hand head, the same in every shot)', !wiss.length && moved['espresso machine'] !== 0 && moved['espresso machine'] !== undefined, { issues: wiss.slice(0, 3), moved });
+    const badW = { t: 1, wall: [{ id: 'espresso machine', dx: 0, box: [690, 760, 170, 130] }], figures: [{ id: 'maya', head: { x: 780, y: 864, r: 58 } }] };
+    ok('background QA: a sign behind a head fails the wall-vs-head check', V.storyDraw.wallCheck(badW).length === 1); }
   // perceived gender: an adult male read at a girl's pitch fails (story-sample-1 Leo, 308 Hz); male style carries a man's-register cue
   { const male = (f0) => ({ who: 'leo', voice: 'X', panel: 0, x: tone(f0, 1.2, 2.5), delivery: 'light' }); const g = (q) => q.checks.find((c) => /gender range/.test(c.name));
     const hi = A.castQa([male(300)], ['gemini-3.8-flash-tts'], { strict: true, edges: false, genders: { leo: 'male' } }); const lo = A.castQa([male(130)], ['gemini-3.8-flash-tts'], { strict: true, edges: false, genders: { leo: 'male' } });

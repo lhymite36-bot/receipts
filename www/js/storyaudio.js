@@ -98,7 +98,7 @@
   // with cosine <= SPEAKER_COS between the characters' pooled lines. Calibrated on our own Gemini takes: the same voice across
   // different takes and reads scored >= 0.47, different voices <= 0.43 (two low male voices), Maya/Leo (girl/guy) ~0.10.
   // qo.speaker = { pairs: [{a, b, cos}], model } (absent in the app: then pitch / brightness decide, as before).
-  const SPEAKER_COS = 0.30; const MALE_F0_MAX = 180; const FEMALE_F0_MIN = 165;
+  const SPEAKER_COS = 0.30; const MALE_F0_MAX = 160; const FEMALE_F0_MIN = 165;
   function castQa(lines, models, qo) {
     qo = qo || {};
     const by = {}; lines.forEach((l) => { if (!l.x || !l.x.length) return; (by[l.who] = by[l.who] || []).push(l); });
