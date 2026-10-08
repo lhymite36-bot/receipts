@@ -28,7 +28,7 @@
   function splitTake(x, n, wc, rate) {
     rate = rate || RATE; const hop = Math.round(0.01 * rate); const fr = frames(x, hop); const peak = Math.max(...fr, 1e-9); const th = Math.max(0.006, peak * 0.05); const voiced = fr.map((v) => v > th);
     const first = voiced.indexOf(true); const last = voiced.lastIndexOf(true); if (first < 0) return null;
-    const seg = (a, b) => x.subarray(Math.max(0, (a - 3) * hop), Math.min(x.length, (b + 4) * hop));
+    const seg = (a, b) => { const y = Float32Array.from(x.subarray(Math.max(0, (a - 8) * hop), Math.min(x.length, (b + 10) * hop))); const f = Math.min(Math.round(0.015 * rate), y.length >> 2); for (let i = 0; i < f; i++) { const g = 0.5 - 0.5 * Math.cos(Math.PI * i / f); y[i] *= g; y[y.length - 1 - i] *= g; } return y; }; // 80 ms lead / 100 ms tail + 15 ms fades: soft onsets ("What...") were clipped at 30 ms
     if (n === 1) return [seg(first, last + 1)];
     const gaps = []; let g = -1; for (let k = first; k <= last; k++) { if (!voiced[k] && g < 0) g = k; if (voiced[k] && g >= 0) { if (k - g >= 14) gaps.push({ a: g, b: k, len: k - g, c: (g + k) / 2 }); g = -1; } }
     if (gaps.length < n - 1) return null;
