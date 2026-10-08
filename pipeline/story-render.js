@@ -68,9 +68,10 @@ async function ttsLive(model, voice, parts) {
   }
 }
 let requests = 0;
+const takeKey = (model, voice, parts) => crypto.createHash('sha1').update(model + '|' + voice + '|' + JSON.stringify(parts)).digest('hex').slice(0, 16);
 async function tts(model, voice, parts, o) {
   o = o || {};
-  const h = crypto.createHash('sha1').update(model + '|' + voice + '|' + JSON.stringify(parts)).digest('hex').slice(0, 16); const f = TAKES + '/' + h + '.pcm';
+  const h = takeKey(model, voice, parts); const f = TAKES + '/' + h + '.pcm';
   if (fs.existsSync(f) && !(o.fresh && !OFFLINE)) { const b = stripWav(fs.readFileSync(f)).pcm; const x = new Float32Array(b.length >> 1); for (let i = 0; i < x.length; i++) x[i] = b.readInt16LE(i * 2) / 32768; log('  cached take ' + h); return x; }
   if (OFFLINE) { if (o.lines) { standIns++; log(`  stand-in voice for ${voice} (offline, no cached take ${h})`); return standIn(o.lines, voice); } throw Object.assign(new Error('offline (cached takes only)'), { quota: true }); }
   requests++; const x = await ttsLive(model, voice, parts); const b = Buffer.alloc(x.length * 2); for (let i = 0; i < x.length; i++) b.writeInt16LE(Math.round(Math.max(-1, Math.min(1, x[i])) * 32767), i * 2);
@@ -94,6 +95,9 @@ async function ttsAny(voice, mk, o) { // tries the allowed models in order; thro
     for (const m of ALLOWED) { try { return { x: await tts(m, voice, mk(m), Object.assign({}, o, { lines: null })), model: m }; } catch (e) { if (!e.quota) throw e; } }
     return { x: await tts(ALLOWED[0], voice, mk(ALLOWED[0]), o), model: ALLOWED[0] + ' (stand-in)' };
   }
+  // a take already made on any allowed model (e.g. on the fallback after a quota stop) is reused, unless a fresh take was asked:
+  // the line keeps the exact voice it was approved with, and a re-render makes no TTS request at all
+  if (!(o && o.fresh)) for (const m of ALLOWED) { const h = takeKey(m, voice, mk(m)); if (fs.existsSync(TAKES + '/' + h + '.pcm')) return { x: await tts(m, voice, mk(m), o), model: m }; }
   for (const m of ALLOWED) { if (exhausted.has(m)) continue; try { return { x: await tts(m, voice, mk(m), o), model: m }; } catch (e) { last = e; if (e.quota) { exhausted.add(m); log(`  ${m}: quota exhausted (${red(e.message).slice(0, 120)})`); continue; } if (e.soft || e.status >= 500) continue; throw e; } }
   throw Object.assign(new Error('TTS quota exhausted on every allowed model: ' + ALLOWED.join(', ') + (last ? ' (' + red(last.message).slice(0, 160) + ')' : '')), { quota: true });
 }
@@ -120,6 +124,8 @@ function speakerPairs(lines, tag) {
   try { const r = JSON.parse(execFileSync(ASR_PY, [path.join(__dirname, 'speaker-embed.py'), dir + '/spec.json'], { maxBuffer: 1 << 24, stdio: ['ignore', 'pipe', 'pipe'] }).toString()); return r; } catch (e) { log('  speaker embedding unavailable: ' + String(e.message).slice(0, 120)); return null; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+// adult characters' genders (voiceHint) for the gender-range voice check; kids / teens are not checked
+function gendersOf(p) { const o = {}; (p.characters || []).forEach((c) => { const h = c.voiceHint || {}; const g = String(h.gender || '').toLowerCase(); if (/child|kid|teen/i.test(h.age || '')) return; if (g.startsWith('m')) o[c.id] = 'male'; else if (g.startsWith('f')) o[c.id] = 'female'; }); return o; }
 // ---------- 1) plan ----------
 // a saved plan brought up to date (captions = spoken text, poses mapped) + --voice re-casts; written back when anything changed
 function applyVoices(p) {
@@ -203,7 +209,7 @@ async function cast(p) {
   try { for (const [who, ls] of groups) lines.push(...await castOne(p, who, ls, models, glitches, verify)); } catch (e) { if (e.quota) queueAndExit(p, e); throw e; }
   // ASR on the final clip of every line (the latest take that covers it): most words heard and the FIRST word heard (a clipped onset drops it)
   const asrFinal = () => lines.map((l) => { const v = [...verify].reverse().find((q) => q.who === l.who && (q.lines || []).includes(l.panel + 1)); if (!v) return { who: l.who, panel: l.panel + 1, text: l.text, checked: false }; const j = v.lines.indexOf(l.panel + 1); return { who: l.who, panel: l.panel + 1, text: l.text, heard: v.heard[j], score: v.scores[j], firstWord: v.firstWord[j] }; });
-  const fullQa = () => { const q = A.castQa(lines, [...models], { strict: true, speaker: speakerPairs(lines, 'cast') }); const as = asrFinal();
+  const fullQa = () => { const q = A.castQa(lines, [...models], { strict: true, speaker: speakerPairs(lines, 'cast'), genders: gendersOf(p) }); const as = asrFinal();
     if (!OFFLINE && fs.existsSync(ASR_PY)) { const c = { name: 'local ASR hears every line (>= 60% of its words, the first word included: no clipped onset)', ok: as.every((a) => a.checked === false ? !!lines.find((l) => l.who === a.who && l.panel + 1 === a.panel).standIn : a.score >= 0.6 && a.firstWord), val: as }; q.checks.push(c); q.pass = q.checks.every((x) => x.ok); }
     return q; };
   let qa = fullQa();
@@ -290,7 +296,7 @@ function finalQa(p, r, voiceLog) {
   const sil = r.silence.map(([a, b]) => ({ from: +a.toFixed(2), to: +b.toFixed(2), rmsDb: +rmsDb(a + 0.06, b - 0.06).toFixed(1) }));
   // every character still sounds different in the final mix (measured on the MP4 at each line's position)
   const seg = (l) => x.subarray(Math.floor((l.start + 0.02) * QA.RATE), Math.floor((l.start + l.dur - 0.02) * QA.RATE));
-  const mp4Lines = r.placed.map((l) => Object.assign({}, l, { x: Float32Array.from(seg(l)) })); const mq = A.castQa(mp4Lines, voiceLog.models, { strict: true, edges: false, speaker: speakerPairs(mp4Lines.map((l, k) => Object.assign({}, l, { standIn: (r.placed[k] || {}).standIn })), 'mp4') });
+  const mp4Lines = r.placed.map((l) => Object.assign({}, l, { x: Float32Array.from(seg(l)) })); const mq = A.castQa(mp4Lines, voiceLog.models, { strict: true, edges: false, genders: gendersOf(p), speaker: speakerPairs(mp4Lines.map((l, k) => Object.assign({}, l, { standIn: (r.placed[k] || {}).standIn })), 'mp4') });
   const music = (() => { const iv = r.placed.map((l) => [l.start, l.start + l.dur]); const gaps = []; r.tm.shots.forEach((s) => { if (s.silence) return; const a = s.start + 0.1; const b = s.start + s.dur - 0.1; if (!iv.some(([p0, p1]) => p0 < b && p1 > a)) gaps.push(rmsDb(a, b)); }); const vo = r.placed.map((l) => rmsDb(l.start + 0.05, l.start + l.dur - 0.05)); return { voiceDb: +(AF.mean(vo)).toFixed(1), musicOnlyDb: gaps.length ? +(AF.mean(gaps)).toFixed(1) : null }; })();
   // effects never sound over a spoken line: in every 20 ms frame from 0.1 s before a line to its end, the effects stem stays
   // >= 30 dB under the line's own level (or below -60 dBFS)
@@ -306,8 +312,9 @@ function finalQa(p, r, voiceLog) {
     ['final mix: no bursts / beeps / clicks / harsh noise / clipping (tones only in effect windows, matching the music stem, or a voice harmonic that tracks the speaker\'s pitch)', scan.ok, { fails: scan.fails.slice(0, 6), voiceHarmonics: scan.events.filter((e) => e.voice) }],
     ...(musicOn ? [['music plays under the story (every non-silent shot > -56 dBFS in the music stem, ducked under voices) and drops out on the silence beat (< -80 dBFS)', musicOn.perShotDb.every((v) => v > -56) && musicOn.silenceBeatDb.every((v) => v < -80), musicOn]] : []),
     ['captions = spoken text: while each line is voiced, the burned-in text is exactly that line, nothing else (every frame; plan captions in sync)', !r.capIssues.length && !S.captionMismatches(p).length && r.stat.capFrames > 0, { frameIssues: r.capIssues.slice(0, 5), planMismatches: S.captionMismatches(p), framesChecked: r.stat.capFrames }],
-    ['poses: no T-pose, every held prop on its hand anchor (every frame)', !r.poseIssues.length, { issues: r.poseIssues.slice(0, 5), poses: r.stat.poses, held: r.stat.held }],
+    ['poses: no T-pose, every held prop on its hand anchor and never over a head circle (every frame)', !r.poseIssues.length, { issues: r.poseIssues.slice(0, 5), poses: r.stat.poses, held: r.stat.held }],
     ['each character keeps a distinct voice in the final mix (pitch >= 3 st, brightness >= 18%, or a different speaker by timbre: speaker-embedding cosine <= ' + A.SPEAKER_COS + ')', mq.checks[0].ok, { who: mq.who, pairs: mq.pairs }],
+    ...mq.checks.filter((c) => /gender range/.test(c.name)).map((c) => [c.name.replace('adult voices', 'adult voices in the final mix'), c.ok, c.val]),
     ['sound effects never play over a spoken line (effects stem >= 30 dB under the line, from 0.1 s before it to its end)', fxOver.every((q) => q.ok), { lines: fxOver, cues: r.cues }],
     ['voice QA passed before render (distinct, expressive, allowed models, no bursts)', !!voiceLog.pass, voiceLog.models],
     ['captions/dialogue never over faces, hook inside the safe area (all frames)', r.overlaps.length === 0, r.overlaps.slice(0, 5)],

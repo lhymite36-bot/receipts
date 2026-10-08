@@ -156,7 +156,10 @@ Story QA (in `<out>.qa.json`, every frame / every stem):
   (`storyDraw.captionCheck`); the plan is checked too (`story.captionMismatches`). `<out>.captions.png` shows one frame per voiced line.
 - **Poses.** Figures use the pose library (`storydraw.js POSE_ARMS`: idle, tense, hips, cup, grip-cup, reading, phone, point, shrug,
   startled, hand-chest, wave, cheer, reach, hide, sit, back) mapped from ACTION / BOARD NOTES (`story.poseFor`); default relaxed arms
-  down, no T-pose. Held props are drawn at the hand anchor; QA fails on a T-pose or a prop more than 2 px off its hand.
+  down, no T-pose. Held props are drawn at the hand anchor; QA fails on a T-pose or a prop more than 2 px off its hand
+  A held paper clue (note, letter, photo, ticket, book) sits at chest height, angled ~7 deg, label to the camera; if a raised-hands
+  pose would lift it within 16 px of the chin, both hands drop with it. QA (`storyDraw.poseCheck`, every frame) also fails when any
+  held prop's box overlaps any head circle (its own or another character's, 4 px margin).
 - **Audio per stem.** Voice + effects stem: strict audio-qa (tones only in effect windows). Music bed stem: tested against its own notes
   (`audiofx.musicPitches`; any burst / click / hiss / clipping fails). Final mix: a sustained tone passes only inside an effect window
   or when the same note is in the music stem. Music must play under every non-silent shot and drop to hard silence on the silence beat.
@@ -173,6 +176,15 @@ Story QA (in `<out>.qa.json`, every frame / every stem):
   (the 44-byte WAV header Gemini 3.8 puts in front of the PCM, now also stripped on receipt and when reading cached takes). Voice QA:
   every clip has >= 30 ms of quiet lead / tail and starts / ends <= -30 dB under its peak, and local ASR (faster-whisper, float32:
   the int8 path returned garbage on this box) must hear >= 60% of the words *including the first word*.
+- **Perceived gender.** Adult characters' median voiced F0 must sit in their gender's range (male <= 180 Hz, female >= 165 Hz;
+  `voiceHint.gender`, kids / teens not checked), on the cast takes and again in the final mix. Adult male styles carry a "grown man,
+  deep adult male chest voice, never falsetto" cue (story-sample-1's Leo on Enceladus read "He wanted to say hi!" at ~317 Hz and
+  listeners heard a girl; re-cast to Algenib, ~165-185 Hz). Blind check: `node pipeline/voice-listen.js <wav>...` (Gemini, audio
+  only, no script or picture; perceived gender / age and the exact words heard, word by word; text-model quota, never TTS).
+- **Director's notes.** A line's `voiceDirection` is appended as a note that overrides the panel mood where they differ (a "nervous,
+  slightly hesitant" mood made Maya stutter "What does, uh, what does..."; the note now also asks for one clean read).
+- **Takes are reused across models.** A take already made on any allowed model (e.g. the fallback after a quota stop) is reused
+  before any live request, so a re-render keeps the approved voice and spends no TTS request.
 - **Distinct voices.** A pair passes on pitch (>= 3 st), brightness (centroid >= 18%) or timbre: a speaker embedding
   (`pipeline/speaker-embed.py`, WeSpeaker ResNet34-LM / VoxCeleb ONNX in ~/.cache/receipts-models, local, no quota; vocal-tract /
   formant / voice-quality / gender cues) with cosine <= 0.30 between the characters' pooled lines. Calibration on our own takes:

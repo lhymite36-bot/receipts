@@ -1,5 +1,5 @@
 /* App-shell service worker. Gemini API calls are never cached. */
-const CACHE = 'rcp-shell-v1.2.3';
+const CACHE = 'rcp-shell-v1.2.4';
 const SHELL = [
   './', './index.html', './styles.css', './manifest.json', './capacitor.js',
   './js/gemini.js', './js/emoji-index.js', './js/scenes.js', './js/library.js', './js/shortgen.js', './js/db.js', './js/speech.js', './js/native.js', './js/render.js', './js/segments.js', './js/audiofx.js', './js/comedy.js', './js/motion.js', './js/three3d.js', './js/captions16.js', './vendor/three.min.js', './js/ideas.js', './js/story.js', './js/storydraw.js', './js/storyaudio.js', './js/app.js', './js/storyui.js',

@@ -72,6 +72,19 @@ let pass = 0; let fail = 0; const ok = (name, c, v) => { if (c) pass++; else fai
   for (let f = 0; f < Math.ceil(tm3.endCard.start * 24); f += 3) { const L = r3.draw(f / 24); pIss = pIss.concat(V.storyDraw.poseCheck(L)); (L.figures || []).forEach((g) => { armsSeen.add(g.arms); if (g.held) heldN++; }); if (L.clue && !['hand', 'counter', 'table', 'floor'].includes(L.clue.on)) floating++; }
   ok('poses: no T-pose and every held prop on its hand anchor, every 3rd frame of the whole story', !pIss.length && heldN > 0, { issues: pIss.slice(0, 3), heldN, arms: [...armsSeen] });
   ok('props: a clue the character holds is drawn at the hand; others rest on a counter / table / floor', !floating);
+  // a held note never covers a face: even with the hands raised (startled / cheer / wave / reading) it drops to chest height
+  { const st4 = JSON.parse(JSON.stringify(plan)); st4.panels.forEach((pn) => { pn.stage.clue = { object: 'note', state: 'revealed', x: 'center', label: 'Dont turn around' }; });
+    S.mapPoses(st4); const tm4 = S.timing(st4); const r4 = new V.storyDraw.StoryRenderer(H.canvas()).setup(st4, { timing: tm4 }); const lid = st4.characters[0].id; const raised = ['startled', 'cheer', 'wave', 'reading', 'hide', 'shrug'];
+    r4.poses = st4.panels.map((pn, i) => new Map([[lid, { arms: raised[i % raised.length], holds: 'note' }]]));
+    let over = []; let heldN4 = 0; for (let f = 0; f < Math.ceil(tm4.endCard.start * 24); f += 4) { const L = r4.draw(f / 24); over = over.concat(V.storyDraw.poseCheck(L)); (L.figures || []).forEach((g) => { if (g.held) heldN4++; }); }
+    ok('props: a held note sits below the chin in every raised-hands pose (never over a head circle, still on the hands)', !over.length && heldN4 > 0, { issues: over.slice(0, 3), heldN4 });
+    const bad = { t: 1, figures: [{ id: 'a', head: { x: 500, y: 800, r: 58 }, held: { kind: 'note', grip: [500, 860], handAt: [500, 860], box: [452, 780, 95, 80] } }] };
+    ok('props QA: a note drawn over the face fails the head-circle check', V.storyDraw.poseCheck(bad).some((q) => q.issue === 'held prop over a head')); }
+  // perceived gender: an adult male read at a girl's pitch fails (story-sample-1 Leo, 308 Hz); male style carries a man's-register cue
+  { const male = (f0) => ({ who: 'leo', voice: 'X', panel: 0, x: tone(f0, 1.2, 2.5), delivery: 'light' }); const g = (q) => q.checks.find((c) => /gender range/.test(c.name));
+    const hi = A.castQa([male(300)], ['gemini-3.8-flash-tts'], { strict: true, edges: false, genders: { leo: 'male' } }); const lo = A.castQa([male(130)], ['gemini-3.8-flash-tts'], { strict: true, edges: false, genders: { leo: 'male' } });
+    const sp = { characters: [{ id: 'leo', name: 'Leo', personality: 'Friendly', voiceHint: { gender: 'male', age: 'young adult' } }, { id: 'kid', name: 'Kid', personality: 'Shy', voiceHint: { gender: 'male', age: 'child' } }, { id: 'maya', name: 'Maya', personality: 'Curious', voiceHint: { gender: 'female' } }] };
+    ok('voices: an adult male line at 300 Hz fails the gender-range check, 130 Hz passes; adult male style asks for a deep male voice (not for kids / women)', g(hi) && !g(hi).ok && g(lo) && g(lo).ok && /grown man/.test(S.styleFor(sp, 'leo', 'light')) && !/grown man/.test(S.styleFor(sp, 'kid', 'light')) && !/grown man/.test(S.styleFor(sp, 'maya', 'light')), { hi: g(hi) && g(hi).val, lo: g(lo) && g(lo).val }); }
   // ---------------- audio: de-esser, music bed vs its own reference ----------------
   const QA = require('../pipeline/audio-qa.js');
   const hiss = new Float32Array(R * 1.2); for (let i = 0; i < hiss.length; i++) { const tt = i / R; const sib = tt > 0.5 && tt < 0.62; hiss[i] = 0.25 * Math.sin(2 * Math.PI * 180 * tt) * (sib ? 0.2 : 1) + (sib ? (i % 2 ? 0.8 : -0.8) * (0.7 + 0.3 * Math.random()) : 0); }

@@ -162,12 +162,17 @@
   };
   // a held prop at the hand anchor; returns the prop's grip point (must coincide with the hand anchor: checked by final QA)
   const CUP_S = 0.62; const NOTE_S = 0.5;
+  // drawn extent of a held prop around its anchor (local units, before NOTE_S / CUP_S): [x, y, w, h] with y up from the anchor
+  const PAPER = { note: [-95, -150, 190, 150], letter: [-110, -140, 220, 140], photo: [-100, -160, 200, 160], ticket: [-110, -90, 220, 90], book: [-100, -100, 200, 100] };
+  const HELD_TILT = -0.12; // paper clues are held angled at chest height, label to the camera
+  function heldBox(kind, at) { const [ax, ay] = at; if (kind === 'cup') return [ax - 34, ay - 34, 68, 80]; if (kind === 'phone') return [ax - 18, ay - 44, 36, 58];
+    const e = PAPER[kind] || [-110, -200, 220, 200]; const pad = Math.abs(Math.sin(HELD_TILT)) * e[2] * NOTE_S / 2; return [ax + e[0] * NOTE_S - pad, ay + 12 + e[1] * NOTE_S - pad, e[2] * NOTE_S + 2 * pad, e[3] * NOTE_S + 2 * pad]; }
   function drawHeld(ctx, held, at, fwd, o, P, t) {
     const [ax, ay] = at; const k = held.kind;
     if (k === 'cup') { cup(ctx, ax, ay + 49 * CUP_S, CUP_S, P, held.accent ? P.A : P.prop); if (held.label) { ctx.save(); ctx.translate(ax, ay - 40 * CUP_S); ctx.rotate(-0.08); box(ctx, -38, -22, 76, 40, '#FFF4B8', 6); fitText(ctx, held.label, 0, -2, 66, 18, held.accent ? P.A : INK); ctx.restore(); } const base = ay + 49 * CUP_S; return [ax, base - 49 * CUP_S]; }
     if (k === 'phone') { box(ctx, ax - 18, ay - 44, 36, 58, INK, 7); const gl = 0.5 + 0.5 * Math.sin((t || 0) * 6); box(ctx, ax - 12, ay - 38, 24, 40, o.motion === 'phone-light' ? mix(o.accent ? P.A : tint(P.S, 0.5), '#FFFFFF', gl * 0.4) : tint(P.S, 0.6), 4); return [ax, ay]; }
     // paper-like clues (note, letter, photo, ticket, book): held from below with both hands, label facing the camera
-    clueObject(ctx, k, ax, ay + 12, NOTE_S, P, !!held.accent, held.label || '', t); return [ax, ay];
+    ctx.save(); ctx.translate(ax, ay + 12); ctx.rotate(HELD_TILT - (k === 'note' ? -0.06 : 0)); clueObject(ctx, k, 0, 0, NOTE_S, P, !!held.accent, held.label || '', t); ctx.restore(); return [ax, ay];
   }
   function figure(ctx, c, st, x, o) {
     const P = o.P; const t = o.t; const face = st.facing; const dir = face === 'left' ? -1 : face === 'right' ? 1 : 0; const back = face === 'back';
@@ -225,12 +230,16 @@
     const place = (q, side, k) => [neck[0] + q[0] * side + (k ? drift2 * side * 0.6 + shake : 0), neck[1] + q[1] + shUp + (k ? drift : drift * 0.5)];
     const EF = place(fOff[0], fwd, 0); const HF = place(fOff[1], fwd, 1); const EA = place(aOff[0], -fwd, 0); const HA = place(aOff[1], -fwd, 1);
     if (key === 'grip-cup' || key === 'reading') { HA[0] = HF[0] - 2 * (HF[0] - neck[0]) + 0; HA[1] = HF[1]; } // both hands on the same prop
+    // a held prop never rises over the head: if its top edge would come within 16 px of the chin, both hands (and the prop with
+    // them) drop to chest height
+    if (held) { const two0 = key === 'grip-cup' || key === 'reading'; const at0 = two0 ? [(HF[0] + HA[0]) / 2, (HF[1] + HA[1]) / 2] : HF; const bx = heldBox(held.kind, at0); const chin = hy + HR + 16; const nearX = bx[0] < hx + HR && bx[0] + bx[2] > hx - HR;
+      if (nearX && bx[1] < chin) { const d = chin - bx[1]; HF[1] += d; EF[1] += d * 0.5; if (two0 || held.kind !== 'cup') { HA[1] += d; EA[1] += d * 0.5; } } }
     line(ctx, [shA, EA, HA], c.top, 13); line(ctx, [shF, EF, HF], c.top, 13);
     if (c.item === 'watch') box(ctx, HA[0] - 9, HA[1] - 26, 18, 14, '#FFD27A', 4);
     let heldInfo = null;
     if (held) {
       const two = key === 'grip-cup' || key === 'reading'; const at = two ? [(HF[0] + HA[0]) / 2, (HF[1] + HA[1]) / 2] : HF.slice();
-      heldInfo = { kind: held.kind, hand: two ? 'both' : 'fwd', at, grip: drawHeld(ctx, held, at, fwd, o, P, t) };
+      heldInfo = { kind: held.kind, hand: two ? 'both' : 'fwd', at, grip: drawHeld(ctx, held, at, fwd, o, P, t), box: heldBox(held.kind, at) };
     }
     if (c.item === 'book' && !held && key !== 'cheer' && key !== 'wave') box(ctx, HA[0] - 30, HA[1] - 30, 60, 40, P.D, 6);
     if (c.item === 'umbrella' && !(held && (key === 'grip-cup' || key === 'reading'))) line(ctx, [[HA[0], HA[1]], [HA[0] + 6, HA[1] + 120]], shade(c.top, 0.2), 12);
@@ -241,7 +250,7 @@
     const arms = { key, shF, shA, HF, HA, EF, EA, tpose: isT(shF, HF) && isT(shA, HA), held: heldInfo };
     // head (circle), hair, face
     head(ctx, c, hx, hy, HR, { look, glance, eyes: st.eyes, back, t, blinkSeed: x, symbol: st.symbol, k, accent: o.accent, P, mood: o.mood });
-    return { x: hx, y: hy, r: HR, back, id: c.id, arms };
+    return { x: hx, y: hy, r: HR, back, id: c.id, arms, head: [hx, hy, HR] };
   }
   function hair(ctx, c, x, y, r, side, back, front) {
     const col = c.hairColor; const h = c.hair;
@@ -382,7 +391,8 @@
       ctx.save(); if (scale !== 1) { ctx.translate(q.x, FEET - 40); ctx.scale(scale, scale); ctx.translate(-q.x, -(FEET - 40)); }
       const hd = figure(ctx, c, q.sc, q.x, Object.assign({ P: this.P }, o));
       { const m = ctx.getTransform(); const k0 = this.c.width / W; const scr = (pt) => [+((m.a * pt[0] + m.c * pt[1] + m.e) / k0).toFixed(1), +((m.b * pt[0] + m.d * pt[1] + m.f) / k0).toFixed(1)]; const A2 = hd.arms; const h = A2.held;
-        this.layout.figures.push({ id: c.id, arms: A2.key, tpose: A2.tpose, hands: [scr(A2.HF), scr(A2.HA)], held: h ? { kind: h.kind, hand: h.hand, at: scr(h.at), grip: scr(h.grip), handAt: h.hand === 'both' ? scr([(A2.HF[0] + A2.HA[0]) / 2, (A2.HF[1] + A2.HA[1]) / 2]) : scr(A2.HF) } : null }); }
+        const sc0 = Math.hypot(m.a, m.b) / k0; const hp = scr([hd.head[0], hd.head[1]]); const bxs = h ? [scr([h.box[0], h.box[1]]), scr([h.box[0] + h.box[2], h.box[1] + h.box[3]])] : null;
+        this.layout.figures.push({ id: c.id, arms: A2.key, tpose: A2.tpose, hands: [scr(A2.HF), scr(A2.HA)], head: { x: hp[0], y: hp[1], r: +(hd.head[2] * sc0).toFixed(1) }, held: h ? { kind: h.kind, hand: h.hand, at: scr(h.at), grip: scr(h.grip), handAt: h.hand === 'both' ? scr([(A2.HF[0] + A2.HA[0]) / 2, (A2.HF[1] + A2.HA[1]) / 2]) : scr(A2.HF), box: [bxs[0][0], bxs[0][1], +(bxs[1][0] - bxs[0][0]).toFixed(1), +(bxs[1][1] - bxs[0][1]).toFixed(1)] } : null }); }
       ctx.restore();
       // record the face box in screen space (for the caption/face overlap QA)
       if (!hd.back) { const k = cam.s * scale; const hx = scale !== 1 ? q.x + (hd.x - q.x) * scale : hd.x; const hy = scale !== 1 ? (FEET - 40) + (hd.y - (FEET - 40)) * scale : hd.y; const X = cam.tx + (hx - cam.fx) * cam.s; const Y = cam.ty + (hy - cam.fy) * cam.s; const R = hd.r * k; if (X + R > 0 && X - R < W && Y + R > 0 && Y - R < H) this.layout.faces.push({ id: c.id, x: X - R, y: Y - R, w: 2 * R, h: 2 * R }); }
@@ -474,9 +484,12 @@
     if (active.length) { const extra = rows.filter((r) => !active.some((l) => normText(r.drawn) === normText(l.text))); if (extra.length) issues.push({ t: +t.toFixed(2), extraText: extra.map((r) => r.drawn), voiced: active.map((l) => l.text) }); }
     return issues;
   }
-  // final-QA check: no T-pose, and every held prop sits on its hand anchor (within 2 px)
+  // final-QA check: no T-pose, every held prop sits on its hand anchor (within 2 px) and never overlaps any head circle (its own
+  // or another character's; 4 px margin)
+  const boxHitsCircle = (b, c, m) => { const nx = Math.max(b[0], Math.min(c.x, b[0] + b[2])); const ny = Math.max(b[1], Math.min(c.y, b[1] + b[3])); return Math.hypot(c.x - nx, c.y - ny) < c.r + (m || 0); };
   function poseCheck(layout) {
-    const issues = [];
+    const issues = []; const figs = layout.figures || [];
+    for (const f of figs) if (f.held && f.held.box) for (const g of figs) if (g.head && boxHitsCircle(f.held.box, g.head, 4)) issues.push({ t: +layout.t.toFixed(2), id: f.id, issue: 'held prop over a head', kind: f.held.kind, head: g.id, box: f.held.box, headCircle: g.head });
     for (const f of layout.figures || []) {
       if (f.tpose) issues.push({ t: +layout.t.toFixed(2), id: f.id, issue: 'T-pose', arms: f.arms });
       if (f.held) { const d = Math.hypot(f.held.grip[0] - f.held.handAt[0], f.held.grip[1] - f.held.handAt[1]); if (d > 2) issues.push({ t: +layout.t.toFixed(2), id: f.id, issue: 'prop off the hand', kind: f.held.kind, px: +d.toFixed(1) }); }

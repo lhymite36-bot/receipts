@@ -98,7 +98,7 @@
   // with cosine <= SPEAKER_COS between the characters' pooled lines. Calibrated on our own Gemini takes: the same voice across
   // different takes and reads scored >= 0.47, different voices <= 0.43 (two low male voices), Maya/Leo (girl/guy) ~0.10.
   // qo.speaker = { pairs: [{a, b, cos}], model } (absent in the app: then pitch / brightness decide, as before).
-  const SPEAKER_COS = 0.30;
+  const SPEAKER_COS = 0.30; const MALE_F0_MAX = 180; const FEMALE_F0_MIN = 165;
   function castQa(lines, models, qo) {
     qo = qo || {};
     const by = {}; lines.forEach((l) => { if (!l.x || !l.x.length) return; (by[l.who] = by[l.who] || []).push(l); });
@@ -120,6 +120,10 @@
       { name: 'no noise bursts or clipping in the voice lines', ok: !bursts.length && !clipped, val: { bursts, clipped } },
       { name: 'characters are expressive (pitch varies >= 1.2 st within lines)', ok: !monotone.length, val: Object.fromEntries(Object.entries(who).map(([k, v]) => [k, v.f0StdSt])) },
     ];
+    // perceived gender: an adult character's median voiced F0 sits in that gender's range (male <= MALE_F0_MAX, female >=
+    // FEMALE_F0_MIN); qo.genders = { who: 'male' | 'female' } for adult characters only (kids / teens / narrator not checked)
+    if (qo.genders) { const gv = Object.entries(qo.genders).filter(([k]) => who[k] && who[k].f0).map(([k, g]) => ({ who: k, gender: g, f0: who[k].f0, ok: g === 'male' ? who[k].f0 <= MALE_F0_MAX : g === 'female' ? who[k].f0 >= FEMALE_F0_MIN : true }));
+      if (gv.length) checks.push({ name: `adult voices sit in their character's gender range (male median F0 <= ${MALE_F0_MAX} Hz, female >= ${FEMALE_F0_MIN} Hz)`, ok: gv.every((v) => v.ok), val: gv }); }
     if (qo.edges !== false) { // every clip starts in the quiet before its first sound and ends after its decay (no clipped onset / cut-off tail)
       const ed = lines.filter((l) => l.x && l.x.length && !l.standIn).map((l) => Object.assign({ who: l.who, panel: l.panel + 1, text: l.text }, edges(l.x, RATE)));
       checks.push({ name: 'no clipped onsets or cut-off tails (each line has >= 30 ms of quiet before its first sound and after its last; first / last 20 ms <= -30 dB under the line peak)', ok: ed.every((e) => e.leadMs >= 30 && e.tailMs >= 30 && e.headDb <= -30 && e.endDb <= -30), val: ed });

@@ -567,10 +567,13 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
     return out;
   }
   function styleFor(p, who, delivery, direction) {
-    const c = (p.characters || []).find((q) => q.id === who); const d = DELIVERY[delivery] || DELIVERY.light; const x = direction ? '; ' + String(direction).trim().replace(/\.$/, '') : '';
+    const c = (p.characters || []).find((q) => q.id === who); const d = DELIVERY[delivery] || DELIVERY.light; const x = direction ? '. Director\'s note for this line (it overrides the mood above where they differ): ' + String(direction).trim().replace(/\.$/, '') : '';
     if (who === 'narrator' || !c) return `Narrate like a warm storybook narrator, ${d}${x}`;
     const age = lc(c.voiceHint && c.voiceHint.age); const kid = /child|kid/.test(age) ? 'like a young kid, ' : /teen/.test(age) ? 'like a teenager, ' : /older/.test(age) ? 'like a kind older person, ' : '';
-    return `Say it ${kid}as ${c.name}, ${lc(c.personality).replace(/\.$/, '')}: ${d}${x}`;
+    // grown men are read in a man's register: an excited 'young adult' male read on a breathy voice came out at ~308 Hz and
+    // listeners heard a girl (story-sample-1, Leo); the cue only applies to adult male characters (female styles unchanged)
+    const g = lc(c.voiceHint && c.voiceHint.gender); const man = !kid && g.startsWith('m') ? 'a grown man with a deep, adult male chest voice (never falsetto, never childlike), ' : '';
+    return `Say it ${kid}as ${c.name}, ${man}${lc(c.personality).replace(/\.$/, '')}: ${d}${x}`;
   }
 
   const api = { LOCATIONS, FEATURES, DEVICES, SHOTS, MOVES, EFFECTS, SPINE, MOODS, PLATFORMS, TONES, HAIR, ITEMS, POSES, ARM_POSES, EYES, SYMBOLS, CLUES, MOTIONS, DELIVERY, VOICES, NICE_PALETTES, END_CARD, LINE_LEAD, LINE_TAIL,
