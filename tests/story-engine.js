@@ -84,5 +84,34 @@ let pass = 0; let fail = 0; const ok = (name, c, v) => { if (c) pass++; else fai
     const msBeep = MA.musicStem(QA.scan(beep, R)); const mix = MA.finalMix(QA.scan(beep, R), ms.tones);
     ok(`music (${style}): the bed's sustained notes no longer fail (they are its own notes), an off-bed beep still does`, ms.ok && !msBeep.ok && !mix.ok && mix.fails.every((e) => Math.abs(e.t - 5) < 0.5), { plainScanFails: raw0.fails.length, bedTones: ms.tones.length, offBed: msBeep.offBed.map((e) => e.hz), mixFails: mix.fails.map((e) => [e.kind, e.t, e.hz]) });
   }
+  // ---------------- audio polish (story-sample-1 held back: clipped "What", effect over a line, 656 Hz "tone", pitch-only distinctness) ----------------
+  { // splitTake keeps a soft onset (a quiet "Wh" 60 ms before the loud vowel) and never cuts into it
+    const soft = (sec) => { const x = new Float32Array(Math.round(R * sec)); for (let i = 0; i < x.length; i++) x[i] = 0.004 * Math.sin(2 * Math.PI * 2500 * i / R) * (0.5 + 0.5 * Math.sin(2 * Math.PI * 37 * i / R)); return x; };
+    const take2 = Float32Array.from([...tone(220, 0.8, 2), ...new Float32Array(R * 0.6), ...soft(0.06), ...tone(220, 0.6, 2), ...new Float32Array(R * 0.3)]);
+    const sg = A.splitTake(take2, 2, [2, 4], R); const e1 = sg && A.edges(sg[1], R);
+    ok('splitTake keeps a soft word onset before the loud vowel (lead >= 30 ms of quiet, starts below -30 dB, includes the 60 ms onset)', sg && e1.leadMs >= 30 && e1.headDb <= -30 && sg[1].length / R >= 0.6 + 0.06 + 0.03, sg && { e1, len: sg[1].length / R });
+    const hdr = Float32Array.from([...new Float32Array(22).map((_, i) => (i % 2 ? -0.7 : 0.6)), ...new Float32Array(R * 0.2), ...tone(200, 0.8, 2), ...new Float32Array(R * 0.2)]); const ct2 = A.cleanTake(hdr, R);
+    ok('cleanTake removes an isolated tick at the start of a take (WAV header bytes read as audio)', ct2.glitches.some((g) => g.kind === 'tick' && g.t === 0) && Math.max(...ct2.x.subarray(0, 100).map(Math.abs)) < 1e-6, ct2.glitches);
+  }
+  { // a voice harmonic is voice; a beep (in the take or from an effect) still fails
+    const n = R * 2; const v = new Float32Array(n); let ph = 0; for (let i = 0; i < n; i++) { const t = i / R; const f0 = 320 * Math.pow(2, 0.6 * Math.sin(2 * Math.PI * 3 * t) / 12); ph += 2 * Math.PI * f0 / R; const on = t > 0.4 && t < 1.6 ? 1 : 0; v[i] = on * (0.05 * Math.sin(ph) + 0.30 * Math.sin(2 * ph) + 0.04 * Math.sin(3 * ph) + 0.02 * Math.sin(4 * ph)); }
+    const win = [[0.4, 1.6]]; const run = (voice, mixed) => QA.voiceAware(voice, win, R).classify(QA.scan(mixed, R, {}), mixed);
+    const plain = run(v, v); const beepAdd = (x, hz) => x.map((s, i) => (i > 0.8 * R && i < 1.2 * R ? s + 0.35 * Math.sin(2 * Math.PI * hz * i / R) : s));
+    const inTake = beepAdd(v, 640); const fromFx = beepAdd(v, 640);
+    const rTake = run(inTake, inTake); const rFx = run(v, fromFx);
+    ok('beep check: a strong 2nd harmonic that moves with the voice\'s pitch is voice, not a beep', plain.events.some((e) => e.kind === 'tone') && plain.ok, plain.events.filter((e) => e.kind === 'tone').map((e) => [e.hz, e.voiceCheck]));
+    ok('beep check: a fixed 640 Hz beep under the same voice still fails, inside the take or from an effect', !rTake.ok && !rFx.ok, { take: rTake.fails.map((e) => [e.hz, e.voiceCheck]), fx: rFx.fails.map((e) => [e.hz, e.voiceCheck]) });
+  }
+  { // distinctness: same pitch, same brightness -> only a different speaker by timbre (speaker-embedding cosine) passes
+    const a = { who: 'maya', voice: 'Erinome', panel: 0, x: tone(310, 1.2, 2.5), delivery: 'light' }; const b = { who: 'leo', voice: 'Enceladus', panel: 1, x: tone(315, 1.2, 2.5), delivery: 'light' };
+    const q1 = A.castQa([a, b], ['gemini-3.8-flash-tts'], { strict: true, edges: false }); const q2 = A.castQa([a, b], ['gemini-3.8-flash-tts'], { strict: true, edges: false, speaker: { pairs: [{ a: 'maya', b: 'leo', cos: 0.1 }] } }); const q3 = A.castQa([a, b], ['gemini-3.8-flash-tts'], { strict: true, edges: false, speaker: { pairs: [{ a: 'maya', b: 'leo', cos: 0.6 }] } });
+    ok('voice distinctness: same pitch passes only as a different speaker by timbre (cos 0.10 passes, cos 0.60 or no embedding fails)', !q1.checks[0].ok && q2.checks[0].ok && q2.pairs[0].by === 'timbre' && !q3.checks[0].ok, [q1.pairs[0], q2.pairs[0], q3.pairs[0]]);
+  }
+  { // mixer: an effect cued on a spoken line moves into the gap after it; nothing of it sounds under the line
+    const VA = V.storyAudio; const plan2 = { panels: [{ effect: 'gulp' }, { effect: 'none' }], shots: [] }; const tm4 = { shots: [{ start: 0, dur: 3, silence: false, snap: false }, { start: 3, dur: 3, silence: false, snap: false }], total: 7.5, body: 6 };
+    const line = { panel: 0, who: 'maya', start: 0.35, x: tone(300, 1.2, 2), dur: 1.2 }; const m4 = await VA.mix(plan2, [line], tm4, { music: 'none', stems: true });
+    const c4 = m4.cues[0]; let fxIn = 0; for (let i = Math.round((0.35 - 0.1) * 48000); i < Math.round(1.55 * 48000); i++) fxIn = Math.max(fxIn, Math.abs(m4.stems.sfx[i]));
+    ok('mixer: an effect cued on a spoken line is moved off it (into the gap after the line) and nothing of it plays under the line', c4 && c4.from === 0.5 && c4.t >= 1.55 && fxIn < 1e-4, { cue: c4, fxIn });
+  }
   console.log(`story-engine: ${pass}/${pass + fail} passed`); process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

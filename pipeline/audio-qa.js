@@ -76,7 +76,49 @@ function musicAware(pcs, rate) {
   const finalMix = (sc, mtones) => { sc.events.forEach((e) => { if (e.kind === 'tone' && !e.allowed) { const hit = (mtones || []).find((m) => m.bedNote && m.t < e.t + e.dur + 0.1 && m.t + m.dur > e.t - 0.1 && Math.abs(m.hz - e.hz) <= Math.max(2 * bin, e.hz * 0.03)); if (hit) e.music = true; } }); sc.fails = sc.events.filter((e) => !(e.kind === 'tone' && (e.allowed || e.music))); sc.ok = !sc.fails.length; return sc; };
   return { bedNote, musicStem, finalMix };
 }
-module.exports = { scan, decode, musicAware, RATE };
+// Voice-harmonic classification for Story renders. A strong vowel can put most of its energy into one harmonic for 150+ ms
+// (e.g. the 2nd harmonic of Maya's "Le-o" at 2 x 328 Hz = 656 Hz), which the pure-tone detector reports as a "tone". Such an event
+// is voice, not a beep, when ALL of these hold over the event:
+//   - it lies inside a voiced line window;
+//   - the voice stem is voiced in >= 80% of the frames (autocorrelation F0, 40 ms frames);
+//   - the tone's frequency sits on one integer harmonic k of that F0 (|hz / f0 - k| <= 1.5% of k; measured voice harmonics stay within 1%) in >= 80% of the frames, i.e.
+//     it moves with the voice's own pitch (a fixed beep under a moving voice drifts off the harmonic);
+//   - the peak is in the voice stem itself (voice-stem level at that frequency within 6 dB of the scanned signal's), so a beep
+//     from an effect or the music that happens to coincide still fails.
+// voiceAware(voiceStem, lineWindows, rate).classify(scan, x) marks e.voice = { k, f0 } and recomputes scan.fails / scan.ok.
+function voiceAware(voice, wins, rate) {
+  rate = rate || RATE; const N = 2048; const bin = rate / N;
+  const inLine = (a, b) => (wins || []).some(([p0, p1]) => a >= p0 - 0.02 && b <= p1 + 0.02);
+  // F0 of the voice stem around time c. With removeHz, a sinusoid at that frequency is least-squares fitted and subtracted first,
+  // so a beep cannot drag the pitch estimate onto itself (a real harmonic removed this way leaves the other harmonics, same F0).
+  const f0At = (c, removeHz) => { const fl = Math.round(0.04 * rate); const lo = Math.floor(rate / 700); const hi = Math.ceil(rate / 65); const s = Math.max(0, Math.round(c * rate - fl / 2)); if (s + fl + hi >= voice.length) return 0;
+    const L2 = fl + hi + 2; let y = Float64Array.from(voice.subarray(s, s + L2));
+    if (removeHz) { const w = 2 * Math.PI * removeHz / rate; let a = 0; let b = 0; let ca = 0; let cb = 0; for (let i = 0; i < L2; i++) { const cs = Math.cos(w * i); const sn = Math.sin(w * i); a += y[i] * cs; b += y[i] * sn; ca += cs * cs; cb += sn * sn; } a /= ca; b /= cb; y = y.map((v, i) => v - a * Math.cos(w * i) - b * Math.sin(w * i)); }
+    let e0 = 0; for (let i = 0; i < fl; i++) e0 += y[i] ** 2; if (Math.sqrt(e0 / fl) < 0.003) return 0; const r = new Float64Array(hi + 2);
+    for (let k = lo - 1; k <= hi + 1; k++) { let c2 = 0; let ek = 0; for (let i = 0; i < fl; i++) { c2 += y[i] * y[i + k]; ek += y[i + k] ** 2; } r[k] = c2 / Math.sqrt(e0 * ek + 1e-12); }
+    let bk = 0; let best = 0; for (let k = lo; k <= hi; k++) if (r[k] > best && r[k] >= r[k - 1] && r[k] >= r[k + 1]) { best = r[k]; bk = k; }
+    // prefer the shortest period that is nearly as periodic (avoids octave-down picks)
+    for (let k = lo; k < bk; k++) if (r[k] > 0.9 * best && r[k] >= r[k - 1] && r[k] >= r[k + 1] && Math.abs(bk / k - Math.round(bk / k)) < 0.08) { bk = k; best = r[k]; break; }
+    if (best < 0.5 || !bk) return 0; const d = r[bk - 1] - 2 * r[bk] + r[bk + 1]; const off = d ? 0.5 * (r[bk - 1] - r[bk + 1]) / d : 0; return rate / (bk + off); };
+  const peakAt = (x, c, hz0) => { const s = Math.max(0, Math.round(c * rate - N / 2)); if (s + N > x.length) return null; const m = dft(Array.prototype.slice.call(x.subarray(s, s + N)).map((v, i) => v * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)))));
+    const k0 = Math.round(hz0 / bin); let k = k0; for (let j = k0 - 3; j <= k0 + 3; j++) if (m[j] > m[k]) k = j; const a = Math.log(m[k - 1] + 1e-20); const b = Math.log(m[k] + 1e-20); const g = Math.log(m[k + 1] + 1e-20); const d = a - 2 * b + g; const off = d ? 0.5 * (a - g) / d : 0;
+    return { hz: (k + off) * bin, pow: m[k] }; };
+  function classify(sc, x) {
+    sc.events.forEach((e) => {
+      if (e.kind !== 'tone' || e.allowed || e.music) return; const a = e.t; const b = e.t + e.dur; if (!inLine(a, b)) return;
+      const fr = []; for (let c = a + N / rate / 2; c <= b - N / rate / 2 + 1e-6; c += 0.025) fr.push(c); if (!fr.length) fr.push((a + b) / 2);
+      let voiced = 0; let onK = 0; let fromVoice = 0; const ks = []; const f0s = []; const devs = [];
+      for (const c of fr) { const px = peakAt(x, c, e.hz); const pv = peakAt(voice, c, e.hz); if (!px || !pv) continue; const f0 = f0At(c, px.hz); if (f0) { voiced++; f0s.push(f0); const k = Math.round(px.hz / f0); ks.push(k); devs.push(+(px.hz / f0 / Math.max(1, k) - 1).toFixed(4)); if (k >= 1 && k <= 12 && Math.abs(px.hz / f0 - k) <= 0.015 * k) onK++; } if (pv.pow >= px.pow * Math.pow(10, -6 / 10)) fromVoice++; }
+      const n = fr.length; const kMode = ks.sort((p, q) => ks.filter((v) => v === q).length - ks.filter((v) => v === p).length)[0];
+      const isVoice = voiced >= 0.8 * n && onK >= 0.8 * n && fromVoice >= 0.8 * n && ks.filter((v) => v === kMode).length >= 0.8 * n;
+      e.voiceCheck = { frames: n, voiced, onHarmonic: onK, fromVoice, k: kMode, f0: f0s.length ? Math.round(A.median(f0s)) : 0, maxDev: devs.length ? Math.max(...devs.map(Math.abs)) : null };
+      if (isVoice) e.voice = { k: kMode, f0: e.voiceCheck.f0 };
+    });
+    sc.fails = sc.events.filter((e) => !(e.kind === 'tone' && (e.allowed || e.music || e.voice))); sc.ok = !sc.fails.length; return sc;
+  }
+  return { classify, f0At };
+}
+module.exports = { scan, decode, musicAware, voiceAware, RATE };
 if (require.main === module) {
   const args = process.argv.slice(2); const file = args.find((a) => !a.startsWith('--') && !/^[\d.,-]+$/.test(a));
   const ai = args.indexOf('--allow'); const allow = ai >= 0 && args[ai + 1] ? args[ai + 1].split(',').filter(Boolean).map((p) => p.split('-').map(Number)) : [];

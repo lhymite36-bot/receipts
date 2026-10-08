@@ -132,7 +132,7 @@ Gemini TTS voice per character + optional narrator; delivery per suspense beat; 
 Outputs `<out>.plan.json`, `<out>.md` (the 11-section doc), `<out>.lines/`, `<out>.voice-log.json`, `<out>.mp4`, `<out>.qa.json`,
 `<out>.contact.png`, `<out>.render-info.json`, optional `<out>.stills/`. Resumable (plan + raw takes cached in `<out>.takes/`).
 Exit 4 = TTS daily quota exhausted on every allowed model: the render is queued in `/workspace/receipts-pipeline/story-queue/`
-(nothing silent or flat is rendered); re-run the command in the queue file after the reset (05:30 IST).
+(nothing silent or flat is rendered); re-run the command in the queue file after the reset (midnight Pacific: 12:30 IST in October, 13:30 IST in winter).
 QA: format/duration, hard silence on the silence beat (< -55 dBFS), audio-qa (bursts/tones/clicks/harsh/clip), per-character
 pitch/timbre distinctness measured on the MP4, no captions over faces (every frame), music under voice.
 Re-takes and previews (a saved plan is reused and brought up to date: captions re-synced to the spoken text, poses re-mapped):
@@ -143,6 +143,12 @@ Re-takes and previews (a saved plan is reused and brought up to date: captions r
     node pipeline/story-render.js --offline --plan <saved.plan.json> --takes <saved.takes> --out <preview-prefix>
 
 `--retake` takes ids or names (`all`, `narrator` too); a quota stop queues the rerun with only the characters not yet re-taken.
+
+    # ONE line again, read alone with a director's note (1 TTS request; the note is saved in the plan as panels[i].voiceDirection)
+    node pipeline/story-render.js --out /workspace/receipts-pipeline/samples/story-sample-1 --stills --retake-line 3:maya \
+      --direction "a touch slower and suspenseful, softly starting on the first word, letting each word land, trailing off at the end"
+
+The character's batch take keeps its cache key (all lines, base styles); a line with a direction replaces its batch segment.
 
 Story QA (in `<out>.qa.json`, every frame / every stem):
 - **Captions = spoken text.** One source of truth: a narrated panel's CAPTION is its narration, a panel where only a character speaks
@@ -155,6 +161,22 @@ Story QA (in `<out>.qa.json`, every frame / every stem):
   (`audiofx.musicPitches`; any burst / click / hiss / clipping fails). Final mix: a sustained tone passes only inside an effect window
   or when the same note is in the music stem. Music must play under every non-silent shot and drop to hard silence on the silence beat.
   Voice lines get a light de-esser (`storyAudio.deEss`) so a bright "s" no longer trips the harsh-noise check.
+  A "tone" inside a voiced line passes only when it is the voice's own harmonic (`audio-qa voiceAware`: it sits on an integer
+  harmonic of the voice stem's F0 within 1.5% in >= 80% of frames, F0 measured after subtracting the tone so a beep cannot pull the
+  pitch onto itself, and the peak is in the voice stem). story-sample-1's 656 Hz on "Leo" = 2 x 322 Hz (H2 of the vowel); fixed beeps
+  under the same voice, in the take or from an effect, still fail (tests/story-engine.js).
+- **Effects never over speech.** The mixer protects every line from 0.12 s before its clip (breath / soft onset) to 0.08 s after it;
+  an effect cued inside that is moved to the nearest gap that starts in its own shot (tail may ring <= 1 s past the cut, never into
+  the silence beat), else ducked -30 dB under the line. QA: the effects stem stays >= 30 dB under every line (0.1 s before -> end).
+- **Onsets.** `splitTake` cuts in the quiet before each line's first sound (walks back over a soft "Wh" / an attached breath, bridges
+  <= 120 ms gaps, never past the middle of the pause before it), 10 ms fades only on silence. `cleanTake` removes isolated ticks
+  (the 44-byte WAV header Gemini 3.8 puts in front of the PCM, now also stripped on receipt and when reading cached takes). Voice QA:
+  every clip has >= 30 ms of quiet lead / tail and starts / ends <= -30 dB under its peak, and local ASR (faster-whisper, float32:
+  the int8 path returned garbage on this box) must hear >= 60% of the words *including the first word*.
+- **Distinct voices.** A pair passes on pitch (>= 3 st), brightness (centroid >= 18%) or timbre: a speaker embedding
+  (`pipeline/speaker-embed.py`, WeSpeaker ResNet34-LM / VoxCeleb ONNX in ~/.cache/receipts-models, local, no quota; vocal-tract /
+  formant / voice-quality / gender cues) with cosine <= 0.30 between the characters' pooled lines. Calibration on our own takes:
+  same voice across takes >= 0.47, different voices <= 0.43, story-sample-1 Maya/Leo ~0.10.
 
 Offline checks: `node tests/story-engine.js`, `node tests/caption-sync.js`; frame stills: `node tests/live/story-stills.js <plan.json> <out-prefix>`.
 No workflow runs Story mode (by design).

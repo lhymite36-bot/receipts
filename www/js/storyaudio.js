@@ -20,22 +20,39 @@
     const fr = frames(x, hop); const th = Math.max(0.006, median(fr.filter((v) => v > 0.006)) * 0.15 || 0.006);
     const bad = new Uint8Array(n); for (let k = 0; k + 3 <= n; k++) { let m = 0; for (let i = 0; i < 3 * hop; i++) m += x[k * hop + i]; if (Math.abs(m / (3 * hop)) > 0.08) for (let j = k; j < k + 3; j++) bad[j] = 1; }
     for (let k = 0; k < n; k++) { if (!bad[k]) continue; let a = k; while (a > 0 && fr[a - 1] > th) a--; let b = k; while (b < n && (fr[b] > th || bad[b])) b++; if ((b - a) * 0.01 > 0.6) { for (let j = a; j < b; j++) bad[j] = 0; continue; } glitches.push({ t: +(a * 0.01).toFixed(2), dur: +((b - a) * 0.01).toFixed(2) }); for (let i = a * hop; i < Math.min(x.length, b * hop); i++) x[i] = 0; for (let j = a; j < b; j++) { bad[j] = 0; fr[j] = 0; } k = b; }
+    // isolated ticks (<= 30 ms of sound with >= 100 ms of quiet on both sides, e.g. the click some takes start with) are not speech
+    { let k = 0; while (k < n) { if (fr[k] <= th) { k++; continue; } let b = k; while (b < n && fr[b] > th) b++; if (b - k <= 3) { let q0 = 0; for (let j = k - 1; j >= 0 && fr[j] <= th && q0 < 10; j--) q0++; let q1 = 0; for (let j = b; j < n && fr[j] <= th && q1 < 10; j++) q1++; if ((q0 >= 10 || k - q0 === 0) && q1 >= 10) { glitches.push({ t: +(k * 0.01).toFixed(2), dur: +((b - k) * 0.01).toFixed(2), kind: 'tick' }); for (let i = k * hop; i < Math.min(x.length, b * hop); i++) x[i] = 0; for (let j = k; j < b; j++) fr[j] = 0; } } k = b; } }
     let last = n - 1; while (last > 0 && fr[last] <= th) last--; const y = x.subarray(0, Math.min(x.length, (last + 25) * hop));
     let px = 0; let py = 0; const a = Math.exp(-2 * Math.PI * 50 / rate); for (let i = 0; i < y.length; i++) { const v = y[i]; py = a * (py + v - px); px = v; y[i] = py; }
     return { x: y, glitches };
   }
-  // split one take into n utterances at pauses (closest to the word-share estimate, preferring long pauses)
+  // split one take into n utterances at pauses (closest to the word-share estimate, preferring long pauses).
+  // Cut points are onset-safe: each line starts in the quiet before its first sound (the soft "Wh" of "What", an attached breath
+  // up to ~0.45 s earlier) and ends after its decay, never inside the speech. Edges get a 10 ms fade that only touches silence.
   function splitTake(x, n, wc, rate) {
     rate = rate || RATE; const hop = Math.round(0.01 * rate); const fr = frames(x, hop); const peak = Math.max(...fr, 1e-9); const th = Math.max(0.006, peak * 0.05); const voiced = fr.map((v) => v > th);
     const first = voiced.indexOf(true); const last = voiced.lastIndexOf(true); if (first < 0) return null;
-    const seg = (a, b) => { const y = Float32Array.from(x.subarray(Math.max(0, (a - 8) * hop), Math.min(x.length, (b + 10) * hop))); const f = Math.min(Math.round(0.015 * rate), y.length >> 2); for (let i = 0; i < f; i++) { const g = 0.5 - 0.5 * Math.cos(Math.PI * i / f); y[i] *= g; y[y.length - 1 - i] *= g; } return y; }; // 80 ms lead / 100 ms tail + 15 ms fades: soft onsets ("What...") were clipped at 30 ms
-    if (n === 1) return [seg(first, last + 1)];
+    const sorted = [...fr].sort((p, q) => p - q); const noise = sorted[Math.floor(sorted.length * 0.1)] || 0; const floor = Math.max(noise * 3, peak * 0.008, 0.0006); // ~ -42 dB under the loudest 10 ms
+    // walk outwards from a voiced edge while there is sound above the floor; bridge quiet runs of <= 120 ms (a breath, then the word)
+    const extend = (k, dir, lim, maxF) => { let best = k; let quiet = 0; for (let j = k + dir, steps = 0; dir < 0 ? j >= lim : j <= lim; j += dir, steps++) { if (steps > maxF) break; if (fr[j] > floor) { quiet = 0; best = j; } else if (++quiet > 12) break; } return best; };
+    const seg = (a, b, loLim, hiLim) => { const a2 = Math.max(loLim, extend(a, -1, loLim, 45) - 4); const b2 = Math.min(hiLim, extend(b - 1, 1, hiLim, 40) + 6); const y = Float32Array.from(x.subarray(Math.max(0, a2 * hop), Math.min(x.length, b2 * hop))); const f = Math.min(Math.round(0.01 * rate), y.length >> 2); for (let i = 0; i < f; i++) { const g = 0.5 - 0.5 * Math.cos(Math.PI * i / f); y[i] *= g; y[y.length - 1 - i] *= g; } return y; };
+    if (n === 1) return [seg(first, last + 1, 0, fr.length)];
     const gaps = []; let g = -1; for (let k = first; k <= last; k++) { if (!voiced[k] && g < 0) g = k; if (voiced[k] && g >= 0) { if (k - g >= 14) gaps.push({ a: g, b: k, len: k - g, c: (g + k) / 2 }); g = -1; } }
     if (gaps.length < n - 1) return null;
     const W = wc.reduce((p, q) => p + q, 0); let cum = 0; const cuts = []; let minA = first;
     for (let j = 0; j < n - 1; j++) { cum += wc[j]; const exp = first + (cum / W) * (last - first); const cand = gaps.filter((q) => q.a > minA + 15 && !cuts.includes(q)); if (!cand.length) return null; const best = cand.map((q) => ({ q, sc: Math.abs(q.c - exp) / 100 - Math.min(q.len, 120) / 100 * 0.9 })).sort((p, r) => p.sc - r.sc)[0].q; cuts.push(best); minA = best.b; }
     const segs = []; let st = first; cuts.forEach((c) => { segs.push([st, c.a]); st = c.b; }); segs.push([st, last + 1]);
-    return segs.map(([a, b]) => seg(a, b));
+    // neighbours never share audio: each side may extend at most to the middle of the pause between them
+    const mids = cuts.map((c) => Math.round(c.c));
+    return segs.map(([a, b], i) => seg(a, b, i ? mids[i - 1] : 0, i < mids.length ? mids[i] : fr.length));
+  }
+  // where a line's sound starts / ends inside its clip (ms of quiet lead / tail) and how loud its first / last 20 ms are relative
+  // to its peak: a clipped onset starts loud with no lead
+  function edges(x, rate) {
+    rate = rate || RATE; const hop = Math.round(0.005 * rate); const fr = frames(x, hop); const peak = Math.max(...fr, 1e-9); const on = fr.findIndex((v) => v > peak * 0.05); let off = fr.length - 1; while (off > 0 && fr[off] <= peak * 0.05) off--;
+    const db = (a, b) => { let e = 0; const n = Math.max(1, b - a); for (let i = a; i < b; i++) e += (x[i] || 0) ** 2; return 20 * Math.log10(Math.sqrt(e / n) / peak + 1e-9); };
+    const w = Math.round(0.02 * rate);
+    return { leadMs: Math.max(0, on) * 5, tailMs: (fr.length - 1 - off) * 5, headDb: +db(0, w).toFixed(1), endDb: +db(x.length - w, x.length).toFixed(1) };
   }
   function fftMag(re) { const n = re.length; const im = new Float64Array(n); const r = Float64Array.from(re); for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [r[i], r[j]] = [r[j], r[i]]; } } for (let len = 2; len <= n; len <<= 1) { const ang = -2 * Math.PI / len; const wr = Math.cos(ang); const wi = Math.sin(ang); for (let i = 0; i < n; i += len) { let cr = 1; let ci = 0; for (let k = 0; k < len / 2; k++) { const ur = r[i + k]; const ui = im[i + k]; const vr = r[i + k + len / 2] * cr - im[i + k + len / 2] * ci; const vi = r[i + k + len / 2] * ci + im[i + k + len / 2] * cr; r[i + k] = ur + vr; im[i + k] = ui + vi; r[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi; const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t; } } } const m = new Float64Array(n / 2); for (let i = 0; i < n / 2; i++) m[i] = Math.hypot(r[i], im[i]); return m; }
   // pitch (autocorrelation F0), pitch variation (st), loudness, spectral centroid: same method as pipeline/audio-features.js
@@ -75,25 +92,38 @@
     const y = new Float32Array(x.length); for (let i = 0; i < x.length; i++) { const q = i / hop; const k = Math.floor(q); const f = q - k; y[i] = x[i] * (gs[k] * (1 - f) + (gs[Math.min(n, k + 1)]) * f); }
     return { x: y, hits };
   }
-  // QA over the cast: every character (and the narrator) distinct by measured pitch or timbre; nobody flat
+  // QA over the cast: every character (and the narrator) audibly distinct, nobody flat, no clipped onsets.
+  // Distinct = pitch gap >= 3 st, OR brightness (spectral centroid) gap >= 18%, OR a different speaker by timbre: a speaker
+  // embedding (vocal-tract length / formants, voice quality, gender; pipeline/speaker-embed.py, WeSpeaker ResNet34 on VoxCeleb)
+  // with cosine <= SPEAKER_COS between the characters' pooled lines. Calibrated on our own Gemini takes: the same voice across
+  // different takes and reads scored >= 0.47, different voices <= 0.43 (two low male voices), Maya/Leo (girl/guy) ~0.10.
+  // qo.speaker = { pairs: [{a, b, cos}], model } (absent in the app: then pitch / brightness decide, as before).
+  const SPEAKER_COS = 0.30;
   function castQa(lines, models, qo) {
     qo = qo || {};
     const by = {}; lines.forEach((l) => { if (!l.x || !l.x.length) return; (by[l.who] = by[l.who] || []).push(l); });
     const who = {}; for (const [k, ls] of Object.entries(by)) { const fs = ls.map((l) => Object.assign(features(l.x, RATE), { delivery: l.delivery })); const pitched = fs.filter((f) => f.voiced >= 8 && f.delivery !== 'whisper'); const use = pitched.length ? pitched : fs.filter((f) => f.voiced >= 4);
       who[k] = { voice: ls[0].voice, lines: ls.length, f0: Math.round(median(use.map((f) => f.f0))) || 0, centroid: Math.round(median(fs.map((f) => f.centroid))), f0StdSt: +median(use.map((f) => f.f0StdSt)).toFixed(2) }; }
+    const spk = (a, b) => { const q = ((qo.speaker && qo.speaker.pairs) || []).find((p) => (p.a === a && p.b === b) || (p.a === b && p.b === a)); return q && typeof q.cos === 'number' ? q.cos : null; };
     const names = Object.keys(who); const pairs = [];
-    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) { const a = who[names[i]]; const b = who[names[j]]; const st = a.f0 && b.f0 ? Math.abs(semis(a.f0, b.f0)) : 0; const cg = Math.abs(a.centroid - b.centroid) / Math.max(1, Math.min(a.centroid, b.centroid)); pairs.push({ a: names[i], b: names[j], pitchGapSt: +st.toFixed(1), timbreGapPct: Math.round(cg * 100), ok: st >= 3 || cg >= 0.18 }); }
+    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) { const a = who[names[i]]; const b = who[names[j]]; const st = a.f0 && b.f0 ? Math.abs(semis(a.f0, b.f0)) : 0; const cg = Math.abs(a.centroid - b.centroid) / Math.max(1, Math.min(a.centroid, b.centroid)); const cos = spk(names[i], names[j]);
+      const by2 = st >= 3 ? 'pitch' : cg >= 0.18 ? 'brightness' : cos != null && cos <= SPEAKER_COS ? 'timbre' : null;
+      pairs.push(Object.assign({ a: names[i], b: names[j], pitchGapSt: +st.toFixed(1), timbreGapPct: Math.round(cg * 100) }, cos != null ? { speakerCos: +cos.toFixed(3) } : {}, { ok: !!by2, by: by2 })); }
     const bursts = []; let clipped = 0; lines.forEach((l) => { if (!l.x) return; const s = scan(l.x, RATE); if (s.bursts.length) bursts.push({ who: l.who, panel: l.panel + 1, at: s.bursts }); clipped += s.clipped; });
     // flagged / lite models flatten the delivery: refused unless the user explicitly chose one ("lower expressiveness");
     // other non-flagged TTS models the key offers are accepted when the rest of the QA passes
     const flat = (models || []).filter((m) => FLAGGED_MODELS.includes(m) || /-lite-/i.test(m) || (qo.strict && !ALLOWED_MODELS.includes(m)));
     const monotone = Object.entries(who).filter(([k, v]) => v.f0 && v.f0StdSt < 1.2 && k !== 'narrator').map(([k]) => k);
     const checks = [
-      { name: 'every voice differs from every other (pitch gap >= 3 st or timbre gap >= 18%)', ok: pairs.every((p) => p.ok), val: pairs },
+      { name: `every voice differs from every other (pitch gap >= 3 st, brightness gap >= 18%, or a different speaker by timbre: speaker-embedding cosine <= ${SPEAKER_COS})`, ok: pairs.every((p) => p.ok), val: pairs },
       flat.length && qo.acceptFlagged ? { name: 'lower-expressiveness model chosen by you (' + flat.join(', ') + ')', ok: true, val: models, lowerExpressiveness: true } : { name: 'no flattening TTS model used (lite / 3.1 preview refused)', ok: !flat.length, val: models },
       { name: 'no noise bursts or clipping in the voice lines', ok: !bursts.length && !clipped, val: { bursts, clipped } },
       { name: 'characters are expressive (pitch varies >= 1.2 st within lines)', ok: !monotone.length, val: Object.fromEntries(Object.entries(who).map(([k, v]) => [k, v.f0StdSt])) },
     ];
+    if (qo.edges !== false) { // every clip starts in the quiet before its first sound and ends after its decay (no clipped onset / cut-off tail)
+      const ed = lines.filter((l) => l.x && l.x.length && !l.standIn).map((l) => Object.assign({ who: l.who, panel: l.panel + 1, text: l.text }, edges(l.x, RATE)));
+      checks.push({ name: 'no clipped onsets or cut-off tails (each line has >= 30 ms of quiet before its first sound and after its last; first / last 20 ms <= -30 dB under the line peak)', ok: ed.every((e) => e.leadMs >= 30 && e.tailMs >= 30 && e.headDb <= -30 && e.endDb <= -30), val: ed });
+    }
     return { pass: checks.every((c) => c.ok), checks, who, pairs };
   }
   // per-panel speech length (for timing) and line placement in video time
@@ -121,19 +151,44 @@
       for (let i = 0; i < N; i++) { let g = base * (1 - duck * act[Math.floor(i / 480)]) * silGain(i / sr); if (i < fin) g *= i / fin; if (i > N - fout) g *= (N - i) / fout; const k = i % m.loopLen; L[i] += m.L[k] * g; R[i] += m.R[k] * g; if (MU) MU[i] = (m.L[k] + m.R[k]) * 0.5 * g; }
     }
     const cues = [];
-    plan.panels.forEach((pn, i) => { const s = tm.shots[i]; if (s.silence) return; if (pn.effect && pn.effect !== 'none') cues.push({ t: s.start + (s.snap ? 0.04 : Math.min(0.5, s.dur * 0.18)), id: pn.effect }); const shot = (plan.shots || [])[i]; const extra = shot && SFX_FOR_CUE[shot.audioCue]; if (extra && extra !== pn.effect) cues.push({ t: s.start + Math.min(0.9, s.dur * 0.4), id: extra, gain: 0.7 }); });
-    const sv = o.sfxVol == null ? 0.6 : o.sfxVol;
+    plan.panels.forEach((pn, i) => { const s = tm.shots[i]; if (s.silence) return; if (pn.effect && pn.effect !== 'none') cues.push({ t: s.start + (s.snap ? 0.04 : Math.min(0.5, s.dur * 0.18)), id: pn.effect, shot: i }); const shot = (plan.shots || [])[i]; const extra = shot && SFX_FOR_CUE[shot.audioCue]; if (extra && extra !== pn.effect) cues.push({ t: s.start + Math.min(0.9, s.dur * 0.4), id: extra, gain: 0.7, shot: i }); });
+    // Effects never play over a spoken line. Each line is protected from SFX_PRE before its clip (the breath / soft onset) to
+    // SFX_POST after it; an effect whose audible body would overlap is moved to the nearest gap that starts inside its own shot (its tail may
+    // ring up to 1 s past the cut, never into the silence beat or the end card), and only if no gap is long enough is it ducked hard (-30 dB) under the speech.
+    const SFX_PRE = 0.12; const SFX_POST = 0.08; const speech = placed.map((l) => [l.start - SFX_PRE, l.start + l.x.length / RATE + SFX_POST]);
+    const sv = o.sfxVol == null ? 0.6 : o.sfxVol; const srcs = [];
     for (const c of cues) {
       if (inSil(c.t)) continue; const d = AF.SFX[c.id]; if (!d) continue; const smp = await AF.sample(c.id, sr); if (!smp) continue;
       const rate = smp.sr / sr; const n = Math.floor(smp.data.length / rate); const src = new Float32Array(n); const g = d.gain * sv * (c.gain || 1);
       for (let j = 0; j < n; j++) { const p = j * rate; const a = Math.floor(p); src[j] = ((smp.data[a] || 0) * (1 - (p - a)) + (smp.data[a + 1] || 0) * (p - a)) * g; }
       let y1 = 0; let y2 = 0; const al = Math.exp(-2 * Math.PI * 4500 / sr); for (let j = 0; j < n; j++) { y1 = (1 - al) * src[j] + al * y1; y2 = (1 - al) * y1 + al * y2; src[j] = y2; }
       let pk = 0; for (let j = 0; j < n; j++) pk = Math.max(pk, Math.abs(src[j])); if (pk > 0.3) for (let j = 0; j < n; j++) src[j] *= 0.3 / pk;
-      const i0 = Math.floor(c.t * sr); for (let j = 0; j < n; j++) { const i = i0 + j; if (i >= N) break; const gg = (1 - 0.35 * act[Math.floor(i / 480)]) * silGain(i / sr); L[i] += src[j] * gg; R[i] += src[j] * gg; if (FX) FX[i] += src[j] * gg; }
+      // audible length: last 10 ms block within 40 dB of the effect's peak
+      let pk2 = 0; for (let j = 0; j < n; j++) pk2 = Math.max(pk2, Math.abs(src[j])); let endJ = n; const blk = Math.round(0.01 * sr); for (let j = n - blk; j > 0; j -= blk) { let m = 0; for (let q = j; q < j + blk; q++) m = Math.max(m, Math.abs(src[q])); if (m > pk2 * 0.01) { endJ = j + blk; break; } }
+      srcs.push({ c, src, aud: endJ / sr });
+    }
+    srcs.sort((p, q) => p.c.t - q.c.t);
+    const busy = []; // effects already placed (a MOVED effect prefers a spot that is free of other effects too)
+    const free = (a, b, iv) => iv.every(([p0, p1]) => b <= p0 || a >= p1);
+    for (const e of srcs) {
+      const c = e.c; const s = tm.shots[c.shot] || { start: 0, dur: tm.total }; const lo = s.start + 0.02; const hi = Math.min(s.start + s.dur + 1.0, tm.body || tm.total) - 0.02; const want = c.t; const L2 = e.aud; // starts inside its own shot; its tail may ring up to 1 s into the next shot (never into a line or the silence beat)
+      c.audDur = +L2.toFixed(2);
+      if (free(want, want + L2, speech)) { busy.push([want, want + L2]); continue; } // effects may overlap each other as designed (tick + clink); never speech
+      // candidate starts: the wanted time clamped into every free stretch of the shot, nearest first
+      const edgesT = [lo, hi - L2]; speech.concat(busy).forEach(([p0, p1]) => { edgesT.push(p1, p0 - L2); });
+      const ok = (t) => t >= lo && t <= s.start + s.dur - 0.05 && t + L2 <= hi && !inSil(t) && !inSil(t + L2) && free(t, t + L2, speech); const near = (p, q) => Math.abs(p - want) - Math.abs(q - want);
+      let cand = edgesT.concat([want]).filter((t) => ok(t) && free(t, t + L2, busy)).sort(near);
+      if (!cand.length) cand = edgesT.concat([want]).filter(ok).sort(near); // two effects may share a gap; speech never shares
+      if (cand.length) { c.from = +want.toFixed(2); c.t = cand[0]; busy.push([c.t, c.t + L2]); } else { c.ducked = true; busy.push([want, want + L2]); }
+    }
+    const duckAt = (t) => { let g = 1; for (const [p0, p1] of speech) { const r = 0.03; if (t >= p0 && t <= p1) return Math.pow(10, -30 / 20); if (t > p0 - r && t < p0) g = Math.min(g, 1 - (1 - Math.pow(10, -30 / 20)) * (t - (p0 - r)) / r); else if (t > p1 && t < p1 + r) g = Math.min(g, 1 - (1 - Math.pow(10, -30 / 20)) * ((p1 + r) - t) / r); } return g; };
+    for (const e of srcs) {
+      const c = e.c; const src = e.src; const n = src.length; const i0 = Math.floor(c.t * sr);
+      for (let j = 0; j < n; j++) { const i = i0 + j; if (i >= N) break; const t = i / sr; const gg = duckAt(t) * silGain(t); L[i] += src[j] * gg; R[i] += src[j] * gg; if (FX) FX[i] += src[j] * gg; }
     }
     const lim = (x) => { const a = Math.abs(x); return a <= 0.8 ? x : Math.sign(x) * (0.8 + 0.19 * Math.tanh((a - 0.8) / 0.19)); };
     for (let i = 0; i < N; i++) { const t = i / sr; const vg = inSil(t) ? 0 : 1; if (o.stems && !vg) V[i] = 0; L[i] = lim(L[i] + V[i] * vg); R[i] = lim(R[i] + V[i] * vg); }
-    const out = { L, R, sr, cues: cues.map((c) => ({ t: +c.t.toFixed(2), id: c.id })), silence, music: o.music || 'storybook' };
+    const out = { L, R, sr, cues: srcs.map((e) => e.c).map((c) => Object.assign({ t: +c.t.toFixed(2), id: c.id, dur: c.audDur }, c.from != null ? { from: c.from } : {}, c.ducked ? { ducked: true } : {})), speech: speech.map(([p0, p1]) => [+p0.toFixed(3), +p1.toFixed(3)]), silence, music: o.music || 'storybook' };
     if (o.stems) out.stems = { voice: V, sfx: FX, music: MU };
     return out;
   }
@@ -257,7 +312,7 @@
     const ac = VTS.render.audioCtx(); if (ac.state === 'suspended') await ac.resume(); const b = ac.createBuffer(1, hit.x.length, RATE); b.copyToChannel(hit.x, 0); const s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(); return s;
   }
 
-  const api = { deEss, knobs, discoverModels, resetSession, syncKey, keyFp, explain, isFlaggedModel, planModels, RATE, ALLOWED_MODELS, FLAGGED_MODELS, cleanTake, splitTake, features, scan, normalize, castQa, placeLines, mix, toAudioBuffer, wavBytes, castVoices, previewVoice, pcmToFloat, resample, median, semis };
+  const api = { deEss, knobs, discoverModels, resetSession, syncKey, keyFp, explain, isFlaggedModel, planModels, RATE, ALLOWED_MODELS, FLAGGED_MODELS, cleanTake, splitTake, edges, features, scan, normalize, castQa, SPEAKER_COS, placeLines, mix, toAudioBuffer, wavBytes, castVoices, previewVoice, pcmToFloat, resample, median, semis };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) { root.VTS = root.VTS || {}; root.VTS.storyAudio = api; }
 }(typeof window !== 'undefined' ? window : null));

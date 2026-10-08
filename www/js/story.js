@@ -558,17 +558,19 @@ ${input.feedback ? '\nYOUR PREVIOUS ANSWER BROKE THESE RULES - fix every one and
     const out = [];
     p.panels.forEach((pn, i) => {
       if (pn.silence) return;
-      if (p.narrator && p.narrator.use && pn.narration) out.push({ panel: i, who: 'narrator', voice: p.narrator.voice, text: pn.narration, delivery: i === 0 ? 'curious' : pn.delivery === 'whisper' ? 'tense' : 'warm' });
-      if (pn.dialogue) { const c = p.characters.find((q) => q.id === pn.dialogue.speaker); if (c) out.push({ panel: i, who: c.id, voice: c.voice, text: pn.dialogue.line, delivery: pn.delivery }); }
-      if (pn.reply) { const c = p.characters.find((q) => q.id === pn.reply.speaker); if (c) out.push({ panel: i, who: c.id, voice: c.voice, text: pn.reply.line, delivery: pn.delivery }); }
+      // pn.voiceDirection = { <who>: 'extra read direction' } (a director's note for one line, e.g. a re-take: 'a touch slower')
+      const dir = (who) => { const d = pn.voiceDirection && pn.voiceDirection[who]; return d ? { direction: String(d) } : {}; };
+      if (p.narrator && p.narrator.use && pn.narration) out.push(Object.assign({ panel: i, who: 'narrator', voice: p.narrator.voice, text: pn.narration, delivery: i === 0 ? 'curious' : pn.delivery === 'whisper' ? 'tense' : 'warm' }, dir('narrator')));
+      if (pn.dialogue) { const c = p.characters.find((q) => q.id === pn.dialogue.speaker); if (c) out.push(Object.assign({ panel: i, who: c.id, voice: c.voice, text: pn.dialogue.line, delivery: pn.delivery }, dir(c.id))); }
+      if (pn.reply) { const c = p.characters.find((q) => q.id === pn.reply.speaker); if (c) out.push(Object.assign({ panel: i, who: c.id, voice: c.voice, text: pn.reply.line, delivery: pn.delivery }, dir(c.id))); }
     });
     return out;
   }
-  function styleFor(p, who, delivery) {
-    const c = (p.characters || []).find((q) => q.id === who); const d = DELIVERY[delivery] || DELIVERY.light;
-    if (who === 'narrator' || !c) return `Narrate like a warm storybook narrator, ${d}`;
+  function styleFor(p, who, delivery, direction) {
+    const c = (p.characters || []).find((q) => q.id === who); const d = DELIVERY[delivery] || DELIVERY.light; const x = direction ? '; ' + String(direction).trim().replace(/\.$/, '') : '';
+    if (who === 'narrator' || !c) return `Narrate like a warm storybook narrator, ${d}${x}`;
     const age = lc(c.voiceHint && c.voiceHint.age); const kid = /child|kid/.test(age) ? 'like a young kid, ' : /teen/.test(age) ? 'like a teenager, ' : /older/.test(age) ? 'like a kind older person, ' : '';
-    return `Say it ${kid}as ${c.name}, ${lc(c.personality).replace(/\.$/, '')}: ${d}`;
+    return `Say it ${kid}as ${c.name}, ${lc(c.personality).replace(/\.$/, '')}: ${d}${x}`;
   }
 
   const api = { LOCATIONS, FEATURES, DEVICES, SHOTS, MOVES, EFFECTS, SPINE, MOODS, PLATFORMS, TONES, HAIR, ITEMS, POSES, ARM_POSES, EYES, SYMBOLS, CLUES, MOTIONS, DELIVERY, VOICES, NICE_PALETTES, END_CARD, LINE_LEAD, LINE_TAIL,

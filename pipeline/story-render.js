@@ -5,6 +5,8 @@
 //   node pipeline/story-render.js --story "She finds a note..." [--tone warm] [--beats 6|8|12] [--platform reel|tiktok|carousel|x]
 //        [--narrator on|off] [--music storybook|chill|lofi|none] [--stills] --out /path/prefix
 //        [--retake maya,leo|all]   fresh TTS takes for these characters (ids or names; 'narrator' too), everyone else from cache
+//        [--retake-line 3:maya]    fresh TTS take of ONE line (panel number : speaker), read alone; the rest stays cached
+//        [--direction "..."]       read direction for --retake-line (saved in the plan as panels[i].voiceDirection[who])
 //        [--voice leo=Enceladus]   re-cast a character (or narrator=...) in the saved plan before voicing
 //        [--plan file.plan.json]   start from this saved plan (copied to <out>.plan.json) instead of asking Gemini
 //        [--takes dir]             take cache (default <out>.takes)
@@ -25,6 +27,7 @@ const OFFLINE = flag('offline') || process.env.TTS_OFFLINE === '1';
 const KEY = process.env.GEMINI_API_KEY; if (!KEY && !OFFLINE) { console.error('NO GEMINI_API_KEY (or run with --offline for a cached-take / stand-in preview)'); process.exit(2); }
 const TAKES = arg('takes', OUT + '.takes'); const MUSIC = arg('music', 'storybook');
 const RETAKE_ARG = String(arg('retake', '')).toLowerCase().split(',').map((x) => x.trim()).filter(Boolean); let RETAKE = new Set(); const retaken = new Set(); let standIns = 0;
+const RETAKE_LINES = new Set(String(arg('retake-line', '')).toLowerCase().split(',').map((x) => x.trim()).filter(Boolean)); // '3:maya'
 const E = (k, d) => (process.env[k] !== undefined && process.env[k] !== '' ? process.env[k] : d);
 (() => { try { const env = fs.readFileSync(path.join(__dirname, 'voice.env'), 'utf8'); for (const ln of env.split('\n')) { const m = /^([A-Z_]+)=(.*)$/.exec(ln.trim()); if (m && process.env[m[1]] === undefined && /^TTS_/.test(m[1])) process.env[m[1]] = m[2].replace(/^"|"$/g, ''); } } catch (_) { /* defaults below */ } })();
 const MODELS = E('TTS_MODELS', A.ALLOWED_MODELS.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
@@ -37,6 +40,15 @@ const log = (...a) => console.log(...a.map(red)); const jw = (f, o) => fs.writeF
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 
 // ---------- Gemini TTS (direct, cached takes, honest quota handling) ----------
+// Gemini 3.8 TTS can return a WAV (RIFF header + 16-bit PCM) instead of bare L16; the 44 header bytes played as audio were a
+// click at the very start of every take. Strip a header (also an approximate one inside takes cached before this fix, whose
+// bytes went through a float round trip: 'RIFF' became 'QIEF'), returning { pcm, rate }.
+function stripWav(buf) {
+  const near = (o, t) => [...t].every((ch, i) => Math.abs(buf[o + i] - ch.charCodeAt(0)) <= 1);
+  if (buf.length > 44 && near(0, 'RIFF') && near(8, 'WAVE')) { let o = 12; let rate = RATE; while (o + 8 <= Math.min(buf.length, 512)) { const id = buf.toString('latin1', o, o + 4); const exact = buf.subarray(o, o + 4).toString('latin1'); if (near(o, 'fmt ')) { const r = buf.readUInt32LE(o + 12); if (r >= 8000 && r <= 96000 && exact === 'fmt ') rate = r; } if (near(o, 'data')) return { pcm: buf.subarray(o + 8), rate, header: o + 8 }; const n = buf.readUInt32LE(o + 4); if (!(n > 0 && n < 4096) || id === '') break; o += 8 + n + (n & 1); }
+    return { pcm: buf.subarray(44), rate, header: 44 }; }
+  return { pcm: buf, rate: RATE, header: 0 };
+}
 const structured = (m) => { const v = /gemini-(\d+(?:\.\d+)?)/.exec(m); return v && parseFloat(v[1]) >= 3.5; };
 async function ttsLive(model, voice, parts) {
   const body = { contents: [{ role: 'user', parts }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } };
@@ -44,7 +56,7 @@ async function ttsLive(model, voice, parts) {
     let r; try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': KEY }, body: JSON.stringify(body), signal: AbortSignal.timeout(240000) }); } catch (e) { if (a <= 2) { log(`  ${model} request failed (${red(e.message).slice(0, 80)}), retry ${a}`); continue; } throw Object.assign(new Error(model + ' network: ' + red(e.message)), { soft: true }); }
     const j = await r.json().catch(() => ({}));
     if (r.ok) { const d = (((j.candidates || [])[0] || {}).content || {}).parts; const au = d && d.map((x) => x.inlineData).find(Boolean); if (!au) throw Object.assign(new Error(model + ' returned no audio'), { soft: true });
-      const buf = Buffer.from(au.data, 'base64'); const x = new Float32Array(buf.length >> 1); for (let i = 0; i < x.length; i++) x[i] = buf.readInt16LE(i * 2) / 32768; return x; }
+      const w = stripWav(Buffer.from(au.data, 'base64')); const mr = /rate=(\d+)/.exec(au.mimeType || au.mime_type || ''); const rate0 = w.header ? w.rate : mr ? Number(mr[1]) : RATE; const buf = w.pcm; let x = new Float32Array(buf.length >> 1); for (let i = 0; i < x.length; i++) x[i] = buf.readInt16LE(i * 2) / 32768; if (rate0 !== RATE) x = A.resample(x, rate0, RATE); return x; }
     const msg = red(JSON.stringify(j.error || j)); const det = ((j.error || {}).details || []);
     const rd = det.map((d) => d.retryDelay).find(Boolean); const w = /retry in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s/.exec(msg);
     const secs = rd ? parseFloat(rd) : w ? Number(w[1] || 0) * 3600 + Number(w[2] || 0) * 60 + Number(w[3]) : 30;
@@ -59,7 +71,7 @@ let requests = 0;
 async function tts(model, voice, parts, o) {
   o = o || {};
   const h = crypto.createHash('sha1').update(model + '|' + voice + '|' + JSON.stringify(parts)).digest('hex').slice(0, 16); const f = TAKES + '/' + h + '.pcm';
-  if (fs.existsSync(f) && !(o.fresh && !OFFLINE)) { const b = fs.readFileSync(f); const x = new Float32Array(b.length >> 1); for (let i = 0; i < x.length; i++) x[i] = b.readInt16LE(i * 2) / 32768; log('  cached take ' + h); return x; }
+  if (fs.existsSync(f) && !(o.fresh && !OFFLINE)) { const b = stripWav(fs.readFileSync(f)).pcm; const x = new Float32Array(b.length >> 1); for (let i = 0; i < x.length; i++) x[i] = b.readInt16LE(i * 2) / 32768; log('  cached take ' + h); return x; }
   if (OFFLINE) { if (o.lines) { standIns++; log(`  stand-in voice for ${voice} (offline, no cached take ${h})`); return standIn(o.lines, voice); } throw Object.assign(new Error('offline (cached takes only)'), { quota: true }); }
   requests++; const x = await ttsLive(model, voice, parts); const b = Buffer.alloc(x.length * 2); for (let i = 0; i < x.length; i++) b.writeInt16LE(Math.round(Math.max(-1, Math.min(1, x[i])) * 32767), i * 2);
   fs.mkdirSync(TAKES, { recursive: true });
@@ -89,13 +101,24 @@ async function ttsAny(voice, mk, o) { // tries the allowed models in order; thro
 const ASR_PY = E('ASR_PY', '/home/box/.venvs/asr/bin/python');
 const toks = (t) => String(t).toLowerCase().replace(/[^a-z' ]/g, ' ').replace(/'/g, '').split(/\s+/).filter(Boolean);
 function heardPerSegment(segs) {
-  if (!fs.existsSync(ASR_PY)) return null; const gap = new Float32Array(Math.round(0.9 * RATE)); const parts = []; const spans = []; let t = 0;
+  if (!fs.existsSync(ASR_PY)) return null; const gap = new Float32Array(Math.round(0.9 * RATE)); const parts = [new Float32Array(Math.round(0.5 * RATE))]; const spans = []; let t = 0.5; // 0.5 s lead-in so the first word is not at t=0
   segs.forEach((s) => { spans.push([t, t + s.length / RATE]); parts.push(s, gap); t += (s.length + gap.length) / RATE; });
   const all = new Float32Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; parts.forEach((p) => { all.set(p, o); o += p.length; });
   const tmp = `/tmp/story-asr-${process.pid}.wav`; AF.writeWav(tmp, all, RATE);
-  try { const w = JSON.parse(execFileSync(ASR_PY, [path.join(__dirname, 'word-times.py'), tmp, E('ASR_LOCAL_MODEL', 'base.en')], { maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'pipe'] }).toString()); fs.unlinkSync(tmp); return spans.map(([a, b]) => w.filter((q) => (q.s + q.e) / 2 >= a - 0.05 && (q.s + q.e) / 2 < b + 0.3).map((q) => q.w).join(' ')); } catch (e) { log('  local ASR unavailable: ' + String(e.message).slice(0, 100)); return null; }
+  try { const w = JSON.parse(execFileSync(ASR_PY, [path.join(__dirname, 'word-times.py'), tmp, E('ASR_LOCAL_MODEL', 'base.en')], { maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'pipe'] }).toString()); fs.unlinkSync(tmp); return spans.map(([a, b], k) => { const lo = k ? (spans[k - 1][1] + a) / 2 : -1; const hi = k < spans.length - 1 ? (b + spans[k + 1][0]) / 2 : 1e9; return w.filter((q) => (q.s + q.e) / 2 >= lo && (q.s + q.e) / 2 < hi).map((q) => q.w).join(' '); }); /* words belong to the nearest span: whisper stretches a first word back into the lead-in */ } catch (e) { log('  local ASR unavailable: ' + String(e.message).slice(0, 100)); return null; }
 }
+const firstHeard = (heard, want) => { const h = toks(heard); const w = toks(want); return !w.length || h.slice(0, 2).includes(w[0]); }; // a clipped onset loses the first word
 const sim = (heard, want) => { const h = toks(heard); const w = toks(want); if (!w.length) return 1; let i = 0; let hit = 0; for (const t of w) { const k = h.indexOf(t, i); if (k >= 0) { hit++; i = k + 1; } } return hit / w.length; };
+
+// ---------- speaker embeddings (timbre / formants / gender; local model, no API quota) ----------
+// lines: [{who, x}] -> { model, pairs: [{a, b, cos}] } or null (model missing / error: pitch + brightness decide alone)
+function speakerPairs(lines, tag) {
+  if (!fs.existsSync(ASR_PY)) return null; const dir = `/tmp/story-spk-${process.pid}-${tag}`; fs.mkdirSync(dir, { recursive: true }); const spec = {};
+  lines.forEach((l, k) => { if (!l.x || !l.x.length || l.standIn) return; const f = `${dir}/${k}-${l.who}.wav`; AF.writeWav(f, l.x, RATE); (spec[l.who] = spec[l.who] || []).push(f); });
+  if (Object.keys(spec).length < 2) { fs.rmSync(dir, { recursive: true, force: true }); return null; }
+  fs.writeFileSync(dir + '/spec.json', JSON.stringify(spec));
+  try { const r = JSON.parse(execFileSync(ASR_PY, [path.join(__dirname, 'speaker-embed.py'), dir + '/spec.json'], { maxBuffer: 1 << 24, stdio: ['ignore', 'pipe', 'pipe'] }).toString()); return r; } catch (e) { log('  speaker embedding unavailable: ' + String(e.message).slice(0, 120)); return null; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
 
 // ---------- 1) plan ----------
 // a saved plan brought up to date (captions = spoken text, poses mapped) + --voice re-casts; written back when anything changed
@@ -109,11 +132,22 @@ function applyVoices(p) {
   });
   return out;
 }
+// --retake-line 3:maya [--direction "..."]: the director's note for that one line is saved in the plan (resumable, cached take)
+function applyDirection(p) {
+  const out = []; const dir = arg('direction', '');
+  for (const key of RETAKE_LINES) {
+    const [pn0, who] = key.split(':'); const i = Number(pn0) - 1; const pn = p.panels[i];
+    const c = (p.characters || []).find((q) => q.id === who || q.name.toLowerCase() === who); const id = who === 'narrator' ? 'narrator' : c && c.id;
+    if (!pn || !id || !S.voiceLines(p).some((l) => l.panel === i && l.who === id)) { console.error(`--retake-line ${key}: panel ${pn0} has no line by "${who}"`); process.exit(2); }
+    if (dir) { pn.voiceDirection = Object.assign({}, pn.voiceDirection, { [id]: dir }); out.push(`panel ${i + 1} ${id}: direction "${dir}"`); }
+  }
+  return out;
+}
 async function plan() {
   const saved = fs.existsSync(OUT + '.plan.json') ? OUT + '.plan.json' : arg('plan') && fs.existsSync(arg('plan')) ? arg('plan') : null;
   if (saved) {
     log('PLAN reuse ' + saved); const p = JSON.parse(fs.readFileSync(saved, 'utf8'));
-    const fx = S.refresh(p); fx.forEach((f) => log('  ' + f)); const vc = applyVoices(p); vc.forEach((f) => log('  voice ' + f));
+    const fx = S.refresh(p); fx.forEach((f) => log('  ' + f)); const vc = applyVoices(p).concat(applyDirection(p)); vc.forEach((f) => log('  voice ' + f));
     if (fx.length || vc.length || saved !== OUT + '.plan.json') { jw(OUT + '.plan.json', p); fs.writeFileSync(OUT + '.md', S.toMarkdown(p)); }
     return p;
   }
@@ -129,29 +163,37 @@ async function plan() {
 async function castOne(p, who, ls, models, glitches, verify) {
   const voice = ls[0].voice; let segs = null; let model = ''; const fresh = RETAKE.has(who) && !OFFLINE; let stood = false;
   if (fresh) log(`  ${who}: fresh take requested (--retake)`);
+  const freshLine = (l) => !OFFLINE && RETAKE_LINES.has(`${l.panel + 1}:${who}`);
+  const styleOf = (l) => S.styleFor(p, who, l.delivery, l.direction);
   const target = ALLOWED.find((m) => !exhausted.has(m)) || ALLOWED[0];
-  // one request per character when the model takes a style per line (3.5+); older models get one request per line when deliveries differ
+  // one request per character when the model takes a style per line (3.5+); older models get one request per line when deliveries differ.
+  // The batch is always the character's full line set in its base styles (one consistent voice; same cache key as before any
+  // per-line direction), and a line with its own direction is then re-read alone and replaces its batch segment.
   if (ls.length > 1 && (structured(target) || new Set(ls.map((l) => l.delivery)).size === 1)) {
     const r = await ttsAny(voice, (m) => (structured(m) ? ls.map((l) => ({ text: l.text, speech_metadata: { style: S.styleFor(p, who, l.delivery) } })) : [{ text: S.styleFor(p, who, ls[0].delivery) + '. Read each paragraph separately, with a clear one-second pause between paragraphs:\n\n' + ls.map((l) => l.text).join('\n\n') }]), { fresh, lines: ls.map((l) => l.text) });
     model = r.model; stood = stood || !!r.x.standIn; const ct = A.cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g)));
     segs = A.splitTake(ct.x, ls.length, ls.map((l) => toks(l.text).length), RATE);
-    if (segs && !stood) { const heard = heardPerSegment(segs); if (heard) { const sc = heard.map((h, k) => sim(h, ls[k].text)); verify.push({ who, take: 'batch', scores: sc.map((v) => +v.toFixed(2)), heard }); if (sc.some((v) => v < 0.6)) { log(`  ${who}: batch split does not match the lines (${sc.map((v) => v.toFixed(2)).join(', ')}), one request per line`); segs = null; } } }
+    if (segs && !stood) { const heard = heardPerSegment(segs); if (heard) { const sc = heard.map((h, k) => sim(h, ls[k].text)); verify.push({ who, take: 'batch', scores: sc.map((v) => +v.toFixed(2)), heard, firstWord: heard.map((h, k) => firstHeard(h, ls[k].text)), lines: ls.map((l) => l.panel + 1) }); if (sc.some((v, k) => v < 0.6 && !ls[k].direction)) { log(`  ${who}: batch split does not match the lines (${sc.map((v) => v.toFixed(2)).join(', ')}), one request per line`); segs = null; } } }
     else if (!segs) log(`  ${who}: could not split the batch take at pauses, one request per line`);
   }
-  if (!segs) {
-    segs = [];
-    for (const l of ls) { const st = S.styleFor(p, who, l.delivery); const r = await ttsAny(voice, (m) => (structured(m) ? [{ text: l.text, speech_metadata: { style: st } }] : [{ text: st + ': ' + l.text }]), { fresh, lines: [l.text] }); model = r.model; stood = stood || !!r.x.standIn; const ct = A.cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g))); segs.push(A.splitTake(ct.x, 1, [1], RATE)[0]); }
-    const heard = stood ? null : heardPerSegment(segs); if (heard) verify.push({ who, take: 'per-line', scores: heard.map((h, k) => +sim(h, ls[k].text).toFixed(2)), heard });
+  const solo = segs ? ls.map((l, k) => (l.direction || freshLine(l) ? k : -1)).filter((k) => k >= 0) : ls.map((_, k) => k);
+  if (solo.length) {
+    if (!segs) segs = [];
+    const done = [];
+    for (const k of solo) { const l = ls[k]; const st = styleOf(l); const fr = fresh || freshLine(l); if (freshLine(l)) log(`  ${who} panel ${l.panel + 1}: fresh take of this line alone (--retake-line)${l.direction ? ' — ' + l.direction : ''}`);
+      const r = await ttsAny(voice, (m) => (structured(m) ? [{ text: l.text, speech_metadata: { style: st } }] : [{ text: st + ': ' + l.text }]), { fresh: fr, lines: [l.text] }); model = r.model; stood = stood || !!r.x.standIn; const ct = A.cleanTake(r.x, RATE); glitches.push(...ct.glitches.map((g) => Object.assign({ who }, g))); segs[k] = A.splitTake(ct.x, 1, [1], RATE)[0]; done.push(k); if (fr) retakenLines.add(`${l.panel + 1}:${who}`); }
+    const heard = stood ? null : heardPerSegment(done.map((k) => segs[k])); if (heard) verify.push({ who, take: 'per-line', scores: heard.map((h, j) => +sim(h, ls[done[j]].text).toFixed(2)), heard, firstWord: heard.map((h, j) => firstHeard(h, ls[done[j]].text)), lines: done.map((k) => ls[k].panel + 1) });
   }
   models.add(model); if (fresh) retaken.add(who);
   // level, then sibilance control (an over-bright "s" tripped audio-qa's harsh-noise check in story-sample-1)
   return ls.map((l, k) => { const n = A.normalize(segs[k], who === 'narrator' ? -20 : l.delivery === 'whisper' ? -19 : -17, 0.85); const d = A.deEss(n, RATE); return Object.assign({}, l, { x: d.x, deEssed: d.hits, dur: d.x.length / RATE, model, standIn: stood }); });
 }
+const retakenLines = new Set();
 function queueAndExit(p, e) {
   fs.mkdirSync(QUEUE_DIR, { recursive: true }); const name = path.basename(OUT); const qf = path.join(QUEUE_DIR, name + '.json');
-  const left = [...RETAKE].filter((w) => !retaken.has(w));
-  const cmd = `cd ${path.join(__dirname, '..')} && node pipeline/story-render.js --out ${OUT}${flag('stills') ? ' --stills' : ''}${MUSIC !== 'storybook' ? ' --music ' + MUSIC : ''}${left.length ? ' --retake ' + left.join(',') : ''}${arg('takes') ? ' --takes ' + TAKES : ''}`;
-  jw(qf, { queuedAt: new Date().toISOString(), out: OUT, storyline: p.input && p.input.storyline, reason: red(e.message), models: ALLOWED, resets: 'Gemini TTS free tier: 10 requests/day per model, resets 05:30 IST', rerun: cmd, takesCached: fs.existsSync(TAKES) ? fs.readdirSync(TAKES).filter((f) => f.endsWith('.pcm')).length : 0, retakenSoFar: [...retaken] });
+  const left = [...RETAKE].filter((w) => !retaken.has(w)); const leftLines = [...RETAKE_LINES].filter((k) => !retakenLines.has(k));
+  const cmd = `cd ${path.join(__dirname, '..')} && node pipeline/story-render.js --out ${OUT}${flag('stills') ? ' --stills' : ''}${MUSIC !== 'storybook' ? ' --music ' + MUSIC : ''}${left.length ? ' --retake ' + left.join(',') : ''}${leftLines.length ? ' --retake-line ' + leftLines.join(',') : ''}${arg('takes') ? ' --takes ' + TAKES : ''}`;
+  jw(qf, { queuedAt: new Date().toISOString(), out: OUT, storyline: p.input && p.input.storyline, reason: red(e.message), models: ALLOWED, resets: 'Gemini TTS free tier: 10 requests/day per model, resets at midnight Pacific (12:30 IST in October, 13:30 IST in winter)', rerun: cmd, takesCached: fs.existsSync(TAKES) ? fs.readdirSync(TAKES).filter((f) => f.endsWith('.pcm')).length : 0, retakenSoFar: [...retaken] });
   log('TTS_QUOTA ' + red(e.message)); log('QUEUED ' + qf + ' (no silent or flat version is rendered). Re-run: ' + cmd); process.exit(4);
 }
 async function cast(p) {
@@ -159,7 +201,12 @@ async function cast(p) {
   log('CAST ' + [...groups].map(([w, ls]) => `${w}=${ls[0].voice} (${ls.length} line${ls.length > 1 ? 's' : ''})`).join(', ') + ' | models ' + ALLOWED.join(' > ') + ' | refused ' + FLAGGED.join(', '));
   let lines = []; const models = new Set(); const glitches = []; const verify = [];
   try { for (const [who, ls] of groups) lines.push(...await castOne(p, who, ls, models, glitches, verify)); } catch (e) { if (e.quota) queueAndExit(p, e); throw e; }
-  let qa = A.castQa(lines, [...models], { strict: true });
+  // ASR on the final clip of every line (the latest take that covers it): most words heard and the FIRST word heard (a clipped onset drops it)
+  const asrFinal = () => lines.map((l) => { const v = [...verify].reverse().find((q) => q.who === l.who && (q.lines || []).includes(l.panel + 1)); if (!v) return { who: l.who, panel: l.panel + 1, text: l.text, checked: false }; const j = v.lines.indexOf(l.panel + 1); return { who: l.who, panel: l.panel + 1, text: l.text, heard: v.heard[j], score: v.scores[j], firstWord: v.firstWord[j] }; });
+  const fullQa = () => { const q = A.castQa(lines, [...models], { strict: true, speaker: speakerPairs(lines, 'cast') }); const as = asrFinal();
+    if (!OFFLINE && fs.existsSync(ASR_PY)) { const c = { name: 'local ASR hears every line (>= 60% of its words, the first word included: no clipped onset)', ok: as.every((a) => a.checked === false ? !!lines.find((l) => l.who === a.who && l.panel + 1 === a.panel).standIn : a.score >= 0.6 && a.firstWord), val: as }; q.checks.push(c); q.pass = q.checks.every((x) => x.ok); }
+    return q; };
+  let qa = fullQa();
   if (!qa.checks[0].ok) { // one automatic re-cast: the quieter-role character in the closest pair gets a contrasting voice
     const worst = qa.pairs.filter((q) => !q.ok).sort((a, b) => a.pitchGapSt - b.pitchGapSt)[0]; const used = new Set([...(p.characters || []).map((c) => c.voice), p.narrator && p.narrator.voice]);
     const who = [worst.a, worst.b].sort((a, b) => lines.filter((l) => l.who === a).length - lines.filter((l) => l.who === b).length)[0]; const other = qa.who[who === worst.a ? worst.b : worst.a];
@@ -167,12 +214,12 @@ async function cast(p) {
     const cand = Object.entries(S.VOICES).filter(([v, d]) => !used.has(v) && (!gender || d[0] === gender) && (other.f0 > 160 ? d[1] === 'low' : d[1] === 'high'));
     if (cand.length) { const nv = cand[0][0]; log(`  voices ${worst.a}/${worst.b} too close (${worst.pitchGapSt} st, ${worst.timbreGapPct}%): re-casting ${who} as ${nv}`); if (who === 'narrator') p.narrator.voice = nv; else c.voice = nv; c && (c.voiceWhy = (c.voiceWhy || '') + ' (re-cast for contrast)');
       try { const ls = S.voiceLines(p).filter((l) => l.who === who); lines = lines.filter((l) => l.who !== who).concat(await castOne(p, who, ls, models, glitches, verify)); } catch (e) { if (e.quota) queueAndExit(p, e); throw e; }
-      jw(OUT + '.plan.json', p); fs.writeFileSync(OUT + '.md', S.toMarkdown(p)); qa = A.castQa(lines, [...models], { strict: true }); }
+      jw(OUT + '.plan.json', p); fs.writeFileSync(OUT + '.md', S.toMarkdown(p)); qa = fullQa(); }
   }
   fs.mkdirSync(OUT + '.lines', { recursive: true }); lines.forEach((l, k) => AF.writeWav(`${OUT}.lines/${String(k + 1).padStart(2, '0')}-p${l.panel + 1}-${l.who}.wav`, l.x, RATE));
-  const log2 = { pass: qa.pass, offline: OFFLINE, standIns, retake: [...RETAKE], retaken: [...retaken], models: [...models], refused: FLAGGED, requests, glitchesRemoved: glitches, asr: verify, who: qa.who, pairs: qa.pairs, checks: qa.checks.map((c) => ({ name: c.name, ok: c.ok, val: c.val })), lines: lines.map((l) => ({ panel: l.panel + 1, who: l.who, voice: l.voice, delivery: l.delivery, text: l.text, dur: +l.dur.toFixed(2), model: l.model, standIn: !!l.standIn, deEssedWindows: l.deEssed || 0, style: S.styleFor(p, l.who, l.delivery) })) };
+  const log2 = { pass: qa.pass, offline: OFFLINE, standIns, retake: [...RETAKE], retaken: [...retaken], retakeLines: [...RETAKE_LINES], retakenLines: [...retakenLines], models: [...models], refused: FLAGGED, requests, glitchesRemoved: glitches, asr: verify, who: qa.who, pairs: qa.pairs, checks: qa.checks.map((c) => ({ name: c.name, ok: c.ok, val: c.val })), lines: lines.map((l) => ({ panel: l.panel + 1, who: l.who, voice: l.voice, delivery: l.delivery, text: l.text, dur: +l.dur.toFixed(2), model: l.model, standIn: !!l.standIn, deEssedWindows: l.deEssed || 0, style: S.styleFor(p, l.who, l.delivery, l.direction), edges: A.edges(l.x, RATE) })) };
   jw(OUT + '.voice-log.json', log2);
-  qa.checks.forEach((c) => log(`  ${c.ok ? 'PASS' : 'FAIL'} ${c.name}`)); Object.entries(qa.who).forEach(([w, v]) => log(`    ${w}: ${v.voice} f0 ${v.f0} Hz, centroid ${v.centroid} Hz, pitch var ${v.f0StdSt} st`));
+  qa.checks.forEach((c) => log(`  ${c.ok ? 'PASS' : 'FAIL'} ${c.name}`)); Object.entries(qa.who).forEach(([w, v]) => log(`    ${w}: ${v.voice} f0 ${v.f0} Hz, centroid ${v.centroid} Hz, pitch var ${v.f0StdSt} st`)); qa.pairs.forEach((q) => log(`    ${q.a}/${q.b}: ${q.pitchGapSt} st, brightness ${q.timbreGapPct}%${q.speakerCos != null ? ', speaker cos ' + q.speakerCos : ''} -> ${q.ok ? 'distinct by ' + q.by : 'TOO CLOSE'}`));
   if (!qa.pass && OFFLINE) log('  (offline preview: voice QA result recorded, not blocking)');
   else if (!qa.pass && process.env.ALLOW_FLAT !== '1') { log('VOICE_QA FAIL (not rendering a flat / same-voice version; see ' + OUT + '.voice-log.json)'); process.exit(5); }
   return lines;
@@ -199,12 +246,12 @@ async function render(p, lines) {
       const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
       // stems for QA at 24 kHz mono: voice + effects (scanned strictly) and the music bed (checked against its own notes)
       const half = (x, y) => { const n = x.length >> 1; const u = new Uint8Array(n * 2); const dv = new DataView(u.buffer); for (let i = 0; i < n; i++) { const v = 0.5 * (x[2 * i] + x[2 * i + 1] + (y ? y[2 * i] + y[2 * i + 1] : 0)); dv.setInt16(2 * i, Math.round(Math.max(-1, Math.min(1, v)) * 32767), true); } return b64(u); };
-      return { wav: b64(wav), cues: m.cues, silence: m.silence, total: tm.total, stemVoiceFx: half(m.stems.voice, m.stems.sfx), stemMusic: m.stems.music ? half(m.stems.music) : null, bedPcs: music !== 'none' ? window.VTS.audiofx.musicPitches(music) : [] };
+      return { wav: b64(wav), cues: m.cues, silence: m.silence, total: tm.total, stemVoiceFx: half(m.stems.voice, m.stems.sfx), stemVoice: half(m.stems.voice), stemSfx: half(m.stems.sfx), speech: m.speech, stemMusic: m.stems.music ? half(m.stems.music) : null, bedPcs: music !== 'none' ? window.VTS.audiofx.musicPitches(music) : [] };
     }, p, tm, placed.map((l) => Object.assign({}, l, { x: undefined, b64: enc(l.x) })), MUSIC);
     fs.writeFileSync(OUT + '.mix.wav', Buffer.from(info.wav, 'base64'));
     const dec16 = (b) => { const buf = Buffer.from(b, 'base64'); const x = new Float32Array(buf.length >> 1); for (let i = 0; i < x.length; i++) x[i] = buf.readInt16LE(i * 2) / 32768; return x; };
-    const stems = { voiceFx: dec16(info.stemVoiceFx), music: info.stemMusic ? dec16(info.stemMusic) : null, bedPcs: info.bedPcs };
-    const NF = Math.ceil(info.total * FPS); log(`RENDER ${NF} frames @ ${FPS} fps (${info.total.toFixed(2)} s), cues ${info.cues.map((c) => c.id + '@' + c.t).join(' ')}, silence ${JSON.stringify(info.silence)}`);
+    const stems = { voiceFx: dec16(info.stemVoiceFx), voice: dec16(info.stemVoice), sfx: dec16(info.stemSfx), speech: info.speech, music: info.stemMusic ? dec16(info.stemMusic) : null, bedPcs: info.bedPcs };
+    const NF = Math.ceil(info.total * FPS); log(`RENDER ${NF} frames @ ${FPS} fps (${info.total.toFixed(2)} s), cues ${info.cues.map((c) => c.id + '@' + c.t + (c.from != null ? ' (moved from ' + c.from + ' off a spoken line)' : '') + (c.ducked ? ' (ducked under speech)' : '')).join(' ')}, silence ${JSON.stringify(info.silence)}`);
     const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-', '-i', OUT + '.mix.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-profile:v', 'high', '-vf', 'scale=in_range=pc:out_range=tv,format=yuv420p', '-color_range', 'tv', '-pix_fmt', 'yuv420p', '-r', String(FPS), '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-t', info.total.toFixed(3), '-movflags', '+faststart', OUT + '.mp4'], { stdio: ['pipe', 'inherit', 'inherit'] });
     const done = new Promise((res, rej) => ff.on('close', (code) => (code === 0 ? res() : rej(new Error('ffmpeg exit ' + code)))));
     const overlaps = []; const B = 24;
@@ -231,29 +278,37 @@ function finalQa(p, r, voiceLog) {
   // effect windows); the music bed is tested against its own reference (a sustained tone must be one of the bed's notes; any
   // burst / click / hiss / clipping fails); in the final mix a sustained tone passes only inside an effect window or when the
   // same note is in the music stem at that moment. A beep from a voice take or an effect therefore still fails.
-  const vfx = QA.scan(r.stems.voiceFx, QA.RATE, { allow });
+  // a "tone" inside a voiced line that sits on the voice's own harmonic and moves with its pitch is the voice (audio-qa voiceAware)
+  const lineWins = r.placed.map((l) => [l.start, l.start + l.dur]); const VA = QA.voiceAware(r.stems.voice, lineWins, QA.RATE);
+  const vfx = VA.classify(QA.scan(r.stems.voiceFx, QA.RATE, { allow }), r.stems.voiceFx);
   const MA = QA.musicAware(r.stems.bedPcs || [], QA.RATE);
   const mscan = r.stems.music ? QA.scan(r.stems.music, QA.RATE, {}) : { ok: true, events: [], fails: [] };
   const mres = MA.musicStem(mscan); const mtones = mres.tones; const mfails = mres.offBed;
-  const scan = MA.finalMix(QA.scan(x, QA.RATE, { allow }), mtones);
+  const scan = VA.classify(MA.finalMix(QA.scan(x, QA.RATE, { allow }), mtones), x);
   const musicOn = MUSIC !== 'none' && r.stems.music ? (() => { const m = r.stems.music; const db = (a, b) => { const i0 = Math.floor(a * QA.RATE); const i1 = Math.min(m.length, Math.floor(b * QA.RATE)); let e = 0; for (let i = i0; i < i1; i++) e += m[i] * m[i]; return 20 * Math.log10(Math.sqrt(e / Math.max(1, i1 - i0)) + 1e-9); }; const outSil = r.tm.shots.filter((q) => !q.silence).map((q) => db(q.start + 0.1, q.start + q.dur - 0.1)); return { styleBed: MUSIC, perShotDb: outSil.map((v) => +v.toFixed(1)), silenceBeatDb: r.silence.map(([a, b]) => +db(a + 0.06, b - 0.06).toFixed(1)) }; })() : null;
   const rmsDb = (a, b) => { const i0 = Math.floor(a * QA.RATE); const i1 = Math.floor(b * QA.RATE); let e = 0; for (let i = i0; i < i1; i++) e += x[i] * x[i]; return 20 * Math.log10(Math.sqrt(e / Math.max(1, i1 - i0)) + 1e-9); };
   const sil = r.silence.map(([a, b]) => ({ from: +a.toFixed(2), to: +b.toFixed(2), rmsDb: +rmsDb(a + 0.06, b - 0.06).toFixed(1) }));
   // every character still sounds different in the final mix (measured on the MP4 at each line's position)
   const seg = (l) => x.subarray(Math.floor((l.start + 0.02) * QA.RATE), Math.floor((l.start + l.dur - 0.02) * QA.RATE));
-  const mp4Lines = r.placed.map((l) => Object.assign({}, l, { x: Float32Array.from(seg(l)) })); const mq = A.castQa(mp4Lines, voiceLog.models, { strict: true });
+  const mp4Lines = r.placed.map((l) => Object.assign({}, l, { x: Float32Array.from(seg(l)) })); const mq = A.castQa(mp4Lines, voiceLog.models, { strict: true, edges: false, speaker: speakerPairs(mp4Lines.map((l, k) => Object.assign({}, l, { standIn: (r.placed[k] || {}).standIn })), 'mp4') });
   const music = (() => { const iv = r.placed.map((l) => [l.start, l.start + l.dur]); const gaps = []; r.tm.shots.forEach((s) => { if (s.silence) return; const a = s.start + 0.1; const b = s.start + s.dur - 0.1; if (!iv.some(([p0, p1]) => p0 < b && p1 > a)) gaps.push(rmsDb(a, b)); }); const vo = r.placed.map((l) => rmsDb(l.start + 0.05, l.start + l.dur - 0.05)); return { voiceDb: +(AF.mean(vo)).toFixed(1), musicOnlyDb: gaps.length ? +(AF.mean(gaps)).toFixed(1) : null }; })();
+  // effects never sound over a spoken line: in every 20 ms frame from 0.1 s before a line to its end, the effects stem stays
+  // >= 30 dB under the line's own level (or below -60 dBFS)
+  const fxOver = (() => { const fx = r.stems.sfx; const vo = r.stems.voice; const R2 = QA.RATE; const h = Math.round(0.02 * R2); const db = (y, a, b) => { let e = 0; for (let i = a; i < b; i++) e += (y[i] || 0) ** 2; return 20 * Math.log10(Math.sqrt(e / Math.max(1, b - a)) + 1e-9); };
+    return r.placed.map((l) => { const a = Math.max(0, Math.floor((l.start - 0.1) * R2)); const b = Math.floor((l.start + l.dur) * R2); const lineDb = db(vo, Math.floor(l.start * R2), b); let worst = -200; let at = null; for (let i = a; i + h <= b; i += h) { const d = db(fx, i, i + h); if (d > worst) { worst = d; at = i / R2; } }
+      return { who: l.who, panel: l.panel + 1, lineDb: +lineDb.toFixed(1), fxPeakDb: +worst.toFixed(1), at: at && +at.toFixed(2), ok: worst <= Math.max(-60, lineDb - 30) }; }); })();
   const checks = [
     ['1080x1920 H.264 yuv420p, 24 fps, AAC audio', v && v.codec_name === 'h264' && v.width === 1080 && v.height === 1920 && v.pix_fmt === 'yuv420p' && v.r_frame_rate === '24/1' && au && au.codec_name === 'aac', { v: v && [v.codec_name, v.width, v.height, v.pix_fmt, v.r_frame_rate], a: au && au.codec_name }],
     ['total 24-32 s (incl. 1.5 s end card)', dur >= 24 && dur <= 32.2, +dur.toFixed(2)],
     ['true hard silence on the silence beat (no voice, no music; < -55 dBFS)', sil.length > 0 && sil.every((s) => s.rmsDb < -55), sil],
-    ['voice + effects stem: no bursts / beeps / clicks / harsh noise / clipping (audio-qa; tones only in effect windows)', vfx.ok, vfx.fails.slice(0, 6)],
+    ['voice + effects stem: no bursts / beeps / clicks / harsh noise / clipping (audio-qa; tones only in effect windows, or a voice harmonic that tracks the speaker\'s pitch)', vfx.ok, { fails: vfx.fails.slice(0, 6), voiceHarmonics: vfx.events.filter((e) => e.voice) }],
     ['music bed stem vs its own reference: sustained tones are the bed\'s notes, no bursts / clicks / hiss / clipping', !mfails.length, { tones: mtones.length, offBed: mfails.slice(0, 6) }],
-    ['final mix: no bursts / beeps / clicks / harsh noise / clipping (tones only in effect windows or matching the music stem)', scan.ok, scan.fails.slice(0, 6)],
+    ['final mix: no bursts / beeps / clicks / harsh noise / clipping (tones only in effect windows, matching the music stem, or a voice harmonic that tracks the speaker\'s pitch)', scan.ok, { fails: scan.fails.slice(0, 6), voiceHarmonics: scan.events.filter((e) => e.voice) }],
     ...(musicOn ? [['music plays under the story (every non-silent shot > -56 dBFS in the music stem, ducked under voices) and drops out on the silence beat (< -80 dBFS)', musicOn.perShotDb.every((v) => v > -56) && musicOn.silenceBeatDb.every((v) => v < -80), musicOn]] : []),
     ['captions = spoken text: while each line is voiced, the burned-in text is exactly that line, nothing else (every frame; plan captions in sync)', !r.capIssues.length && !S.captionMismatches(p).length && r.stat.capFrames > 0, { frameIssues: r.capIssues.slice(0, 5), planMismatches: S.captionMismatches(p), framesChecked: r.stat.capFrames }],
     ['poses: no T-pose, every held prop on its hand anchor (every frame)', !r.poseIssues.length, { issues: r.poseIssues.slice(0, 5), poses: r.stat.poses, held: r.stat.held }],
-    ['each character keeps a distinct voice in the final mix (pitch >= 3 st or timbre >= 18%)', mq.checks[0].ok, { who: mq.who, pairs: mq.pairs }],
+    ['each character keeps a distinct voice in the final mix (pitch >= 3 st, brightness >= 18%, or a different speaker by timbre: speaker-embedding cosine <= ' + A.SPEAKER_COS + ')', mq.checks[0].ok, { who: mq.who, pairs: mq.pairs }],
+    ['sound effects never play over a spoken line (effects stem >= 30 dB under the line, from 0.1 s before it to its end)', fxOver.every((q) => q.ok), { lines: fxOver, cues: r.cues }],
     ['voice QA passed before render (distinct, expressive, allowed models, no bursts)', !!voiceLog.pass, voiceLog.models],
     ['captions/dialogue never over faces, hook inside the safe area (all frames)', r.overlaps.length === 0, r.overlaps.slice(0, 5)],
     ['music sits under the voice (voice louder than music-only stretches by >= 8 dB)', music.musicOnlyDb == null || music.voiceDb - music.musicOnlyDb >= 8, music],
